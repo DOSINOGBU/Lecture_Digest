@@ -1,11 +1,19 @@
 """LectureDigest MVP package."""
 
+from lecturedigest.chunking import chunk_lecture
 from lecturedigest.ingestion import register_lecture
-from lecturedigest.models import LectureRecord, ProcessingIssue, TranscriptSegment
+from lecturedigest.models import (
+    LectureRecord,
+    ProcessingIssue,
+    TranscriptChunk,
+    TranscriptSegment,
+)
 
 __all__ = [
     "LectureRecord",
     "ProcessingIssue",
+    "TranscriptChunk",
     "TranscriptSegment",
+    "chunk_lecture",
     "register_lecture",
 ]

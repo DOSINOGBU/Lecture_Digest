@@ -23,3 +23,7 @@ class ValidationError(LectureDigestError):
 
 class SubtitleParseError(LectureDigestError):
     pass
+
+
+class IndexingError(LectureDigestError):
+    pass

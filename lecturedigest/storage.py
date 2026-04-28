@@ -22,6 +22,12 @@ class JsonLectureRepository:
             if isinstance(item, dict)
         ]
 
+    def get_lecture(self, lecture_id: str) -> LectureRecord | None:
+        for lecture in self.list_lectures():
+            if lecture.lecture_id == lecture_id:
+                return lecture
+        return None
+
     def save(self, record: LectureRecord) -> None:
         lectures = self.list_lectures()
         updated = [item for item in lectures if item.lecture_id != record.lecture_id]

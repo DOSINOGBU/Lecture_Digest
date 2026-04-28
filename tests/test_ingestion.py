@@ -104,6 +104,7 @@ class IngestionTest(unittest.TestCase):
 
             self.assertEqual(len(lectures), 1)
             self.assertEqual(lectures[0].lecture_id, record.lecture_id)
+            self.assertEqual(lectures[0].chunks, [])
 
 
 if __name__ == "__main__":

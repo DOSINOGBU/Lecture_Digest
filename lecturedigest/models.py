@@ -27,6 +27,22 @@ class TranscriptSegment:
 
 
 @dataclass(frozen=True)
+class TranscriptChunk:
+    chunk_id: str
+    lecture_id: str
+    chapter: str
+    start_ts: str
+    end_ts: str
+    text: str
+    segment_ids: list[str]
+    speaker: str | None = None
+    ocr_text: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class LectureRecord:
     lecture_id: str
     title: str
@@ -38,6 +54,7 @@ class LectureRecord:
     stage: str
     transcript_source: str
     segments: list[TranscriptSegment] = field(default_factory=list)
+    chunks: list[TranscriptChunk] = field(default_factory=list)
     issues: list[ProcessingIssue] = field(default_factory=list)
     created_at: str | None = None
 
@@ -53,6 +70,7 @@ class LectureRecord:
             "stage": self.stage,
             "transcript_source": self.transcript_source,
             "segments": [segment.to_dict() for segment in self.segments],
+            "chunks": [chunk.to_dict() for chunk in self.chunks],
             "issues": [issue.to_dict() for issue in self.issues],
             "created_at": self.created_at,
         }
@@ -87,6 +105,31 @@ class LectureRecord:
                 )
                 for segment in _as_dict_list(payload.get("segments", []))
             ],
+            chunks=[
+                TranscriptChunk(
+                    chunk_id=str(chunk["chunk_id"]),
+                    lecture_id=str(chunk["lecture_id"]),
+                    chapter=str(chunk["chapter"]),
+                    start_ts=str(chunk["start_ts"]),
+                    end_ts=str(chunk["end_ts"]),
+                    text=str(chunk["text"]),
+                    segment_ids=[
+                        str(segment_id)
+                        for segment_id in _as_string_list(chunk.get("segment_ids", []))
+                    ],
+                    speaker=(
+                        str(chunk["speaker"])
+                        if chunk.get("speaker") is not None
+                        else None
+                    ),
+                    ocr_text=(
+                        str(chunk["ocr_text"])
+                        if chunk.get("ocr_text") is not None
+                        else None
+                    ),
+                )
+                for chunk in _as_dict_list(payload.get("chunks", []))
+            ],
             issues=[
                 ProcessingIssue(
                     code=str(issue["code"]),
@@ -108,3 +151,9 @@ def _as_dict_list(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _as_string_list(value: object) -> list[object]:
+    if not isinstance(value, list):
+        return []
+    return value
