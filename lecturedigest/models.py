@@ -111,6 +111,8 @@ class LectureRecord:
     flashcards: list[dict[str, object]] = field(default_factory=list)
     anki_exports: list[dict[str, object]] = field(default_factory=list)
     card_metadata: dict[str, object] = field(default_factory=dict)
+    quiz_items: list[dict[str, object]] = field(default_factory=list)
+    quiz_metadata: dict[str, object] = field(default_factory=dict)
     created_at: str | None = None
     input_mode: str = "file"
     lecture_title: str | None = None
@@ -146,6 +148,8 @@ class LectureRecord:
             "flashcards": self.flashcards,
             "anki_exports": self.anki_exports,
             "card_metadata": self.card_metadata,
+            "quiz_items": self.quiz_items,
+            "quiz_metadata": self.quiz_metadata,
             "created_at": self.created_at,
             "input_mode": self.input_mode,
             "lecture_title": self.lecture_title,
@@ -187,6 +191,8 @@ class LectureRecord:
             flashcards=_as_dict_list(payload.get("flashcards", [])),
             anki_exports=_as_dict_list(payload.get("anki_exports", [])),
             card_metadata=_as_metadata(payload.get("card_metadata", {})),
+            quiz_items=_as_dict_list(payload.get("quiz_items", [])),
+            quiz_metadata=_as_metadata(payload.get("quiz_metadata", {})),
             created_at=(
                 str(payload["created_at"])
                 if payload.get("created_at") is not None

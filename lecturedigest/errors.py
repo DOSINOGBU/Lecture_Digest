@@ -47,3 +47,7 @@ class NoteGenerationError(LectureDigestError):
 
 class AnkiExportError(LectureDigestError):
     pass
+
+
+class QuizGenerationError(LectureDigestError):
+    pass

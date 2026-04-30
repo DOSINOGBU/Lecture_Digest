@@ -25,6 +25,7 @@ from lecturedigest.note_cli import (
     generate_notes_command,
     reject_note_command,
 )
+from lecturedigest.quiz_cli import add_quiz_parsers, generate_quizzes_command
 from lecturedigest.rag_cli import (
     add_rag_parsers,
     ask_command,
@@ -74,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
             return generate_cards_command(args, repository)
         if args.command == "export-anki":
             return export_anki_command(args, repository)
+        if args.command == "generate-quizzes":
+            return generate_quizzes_command(args, repository)
     except LectureDigestError as exc:
         _print_error(exc)
         return 1
@@ -139,6 +142,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_rag_parsers(subparsers)
     add_note_parsers(subparsers)
     add_anki_parsers(subparsers)
+    add_quiz_parsers(subparsers)
 
     subparsers.add_parser("list")
     return parser
