@@ -1,4 +1,4 @@
-# Plan: OpenAI STT Transcription
+﻿# Plan: OpenAI STT Transcription
 
 ## Goal
 
@@ -16,14 +16,14 @@
 
 ## Steps
 
-- [ ] `transcribe` CLI parser와 command handler를 추가한다.
-- [ ] lecture 상태가 `stt_pending`인지 검증한다.
-- [ ] 파일 존재, 파일 확장자, 파일 크기, 읽기 가능 여부를 검증한다.
-- [ ] OpenAI 클라이언트 기반으로 Transcriptions API multipart 요청을 만든다.
-- [ ] `diarized_json` 응답을 기존 STT JSON parser 입력 형태로 정규화한다.
-- [ ] 성공 시 `segments`, `transcript_metadata`, status, stage를 저장한다.
-- [ ] 실패 시 retryable 여부와 provider metadata를 issue로 남긴다.
-- [ ] 빈 결과, malformed response, timestamp 역전, speaker 누락을 명확한 오류로 처리한다.
+- [x] `transcribe` CLI parser와 command handler를 추가한다.
+- [x] lecture 상태가 `stt_pending`인지 검증한다.
+- [x] 파일 존재, 파일 확장자, 파일 크기, 읽기 가능 여부를 검증한다.
+- [x] OpenAI 클라이언트 기반으로 Transcriptions API multipart 요청을 만든다.
+- [x] `diarized_json` 응답을 기존 STT JSON parser 입력 형태로 정규화한다.
+- [x] 성공 시 `segments`, `transcript_metadata`, status, stage를 저장한다.
+- [x] 실패 시 retryable 여부와 provider metadata를 issue로 남긴다.
+- [x] 빈 결과, malformed response, timestamp 역전, speaker 누락을 명확한 오류로 처리한다.
 
 ## Validation
 
@@ -39,4 +39,11 @@
 
 ## Result
 
-작성 전.
+완료. `stt_pending` 강의를 실제 OpenAI Transcriptions API 요청으로 전사하는
+`transcribe` CLI 경로를 추가했다. direct upload preflight, multipart 요청 생성,
+dry-run 출력, diarized JSON 응답 정규화, 성공 metadata 저장, provider 실패 issue
+기록을 구현했다. 테스트는 API 키 없음, unsupported extension, 25MB 초과,
+transcript already exists, non-`stt_pending`, fake diarized success, speaker 누락,
+malformed response, dry-run 저장소 무변경을 포함한다. 실제 OpenAI 호출은 강의 파일
+업로드와 비용이 발생하므로 계획대로 수동 smoke test로 남긴다.
+
