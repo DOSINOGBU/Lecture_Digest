@@ -8,12 +8,14 @@ from lecturedigest.models import (
     TranscriptChunk,
     TranscriptSegment,
 )
+from lecturedigest.transcription import apply_stt_result
 
 __all__ = [
     "LectureRecord",
     "ProcessingIssue",
     "TranscriptChunk",
     "TranscriptSegment",
+    "apply_stt_result",
     "chunk_lecture",
     "register_lecture",
 ]

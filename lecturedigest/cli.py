@@ -9,6 +9,7 @@ from lecturedigest.errors import ErrorDetail, LectureDigestError, ValidationErro
 from lecturedigest.ingestion import register_lecture
 from lecturedigest.models import LectureRecord
 from lecturedigest.storage import JsonLectureRepository
+from lecturedigest.transcription import apply_stt_result
 
 DEFAULT_STORE = Path(".lecturedigest") / "lectures.json"
 
@@ -23,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
             return _register(args, repository)
         if args.command == "list":
             return _list(repository)
+        if args.command == "import-stt":
+            return _import_stt(args, repository)
         if args.command == "chunk":
             return _chunk(args, repository)
     except LectureDigestError as exc:
@@ -55,6 +58,10 @@ def _build_parser() -> argparse.ArgumentParser:
     chunk_parser.add_argument("--window-seconds", type=int, default=90)
     chunk_parser.add_argument("--overlap-seconds", type=int, default=15)
     chunk_parser.add_argument("--chapter", default="unassigned")
+
+    import_stt_parser = subparsers.add_parser("import-stt")
+    import_stt_parser.add_argument("--lecture-id", required=True)
+    import_stt_parser.add_argument("--stt-result", required=True, type=Path)
 
     subparsers.add_parser("list")
     return parser
@@ -121,6 +128,33 @@ def _chunk(args: argparse.Namespace, repository: JsonLectureRepository) -> int:
     return 0
 
 
+def _import_stt(args: argparse.Namespace, repository: JsonLectureRepository) -> int:
+    lectures = repository.list_lectures()
+    if not lectures:
+        print("No lectures registered yet. Add one with `register`.")
+        return 0
+
+    print(
+        "[LectureTranscription] import-stt start "
+        f"{{ lectureId={args.lecture_id} }}"
+    )
+    record = repository.get_lecture(args.lecture_id)
+    if record is None:
+        raise ValidationError(
+            ErrorDetail(
+                code="lecture_not_found",
+                message=f"강의를 찾을 수 없습니다: {args.lecture_id}",
+                stage="transcription",
+                retryable=False,
+            )
+        )
+
+    updated = apply_stt_result(record, stt_result_path=args.stt_result)
+    repository.save(updated)
+    print(_format_stt_result(updated))
+    return 0
+
+
 def _format_record(record: LectureRecord) -> str:
     segment_count = len(record.segments)
     chunk_count = len(record.chunks)
@@ -138,6 +172,15 @@ def _format_chunk_result(record: LectureRecord) -> str:
         "[LectureIndexing] chunk success "
         f"{{ lectureId={record.lecture_id}; status={record.status}; "
         f"stage={record.stage}; chunks={len(record.chunks)} }}"
+    )
+
+
+def _format_stt_result(record: LectureRecord) -> str:
+    return (
+        "[LectureTranscription] import-stt success "
+        f"{{ lectureId={record.lecture_id}; status={record.status}; "
+        f"stage={record.stage}; transcriptSource={record.transcript_source}; "
+        f"segments={len(record.segments)} }}"
     )
 
 

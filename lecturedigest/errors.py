@@ -25,5 +25,9 @@ class SubtitleParseError(LectureDigestError):
     pass
 
 
+class TranscriptionError(LectureDigestError):
+    pass
+
+
 class IndexingError(LectureDigestError):
     pass

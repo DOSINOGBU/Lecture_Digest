@@ -95,6 +95,114 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("No lectures registered yet", stdout.getvalue())
 
+    def test_import_stt_outputs_empty_state(self):
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "import-stt",
+                    "--lecture-id",
+                    "lec_missing",
+                    "--stt-result",
+                    str(self.root / "stt.srt"),
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("No lectures registered yet", stdout.getvalue())
+
+    def test_import_stt_outputs_loading_and_success_state(self):
+        video = self.root / "lecture.mp4"
+        stt_result = self.root / "stt.srt"
+        video.write_bytes(b"fake video")
+        stt_result.write_text(
+            "1\n00:00:00,000 --> 00:00:10,000\none\n",
+            encoding="utf-8",
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register",
+                    "--video",
+                    str(video),
+                    "--title",
+                    "Intro",
+                    "--instructor",
+                    "Teacher",
+                    "--category",
+                    "Coding",
+                ]
+            )
+        lecture_id = _read_lecture_id(self.store)
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "import-stt",
+                    "--lecture-id",
+                    lecture_id,
+                    "--stt-result",
+                    str(stt_result),
+                ]
+            )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("import-stt start", output)
+        self.assertIn("import-stt success", output)
+        self.assertIn("transcriptSource=stt", output)
+        self.assertIn("segments=1", output)
+
+    def test_import_stt_outputs_error_state(self):
+        video = self.root / "lecture.mp4"
+        stt_result = self.root / "stt.srt"
+        video.write_bytes(b"fake video")
+        stt_result.write_text("", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register",
+                    "--video",
+                    str(video),
+                    "--title",
+                    "Intro",
+                    "--instructor",
+                    "Teacher",
+                    "--category",
+                    "Coding",
+                ]
+            )
+        lecture_id = _read_lecture_id(self.store)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "import-stt",
+                    "--lecture-id",
+                    lecture_id,
+                    "--stt-result",
+                    str(stt_result),
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("command failed", stderr.getvalue())
+        self.assertIn("stt_result_empty", stderr.getvalue())
+
     def test_chunk_outputs_loading_and_success_state(self):
         video = self.root / "lecture.mp4"
         subtitle = self.root / "lecture.srt"
