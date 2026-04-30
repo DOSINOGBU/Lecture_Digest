@@ -17,6 +17,7 @@ SUPPORTED_CORRECTION_RESULT_EXTENSIONS = {".json"}
 DEFAULT_CORRECTION_MODEL = "gpt-4o"
 DEFAULT_CORRECTION_PROMPT_VERSION = "transcript-correction-v1"
 DEFAULT_CORRECTION_CONFIDENCE_THRESHOLD = 0.9
+DEFAULT_CORRECTION_REVIEW_THRESHOLD = 0.7
 
 TOKEN_PATTERN = re.compile(r"`[^`]+`|[A-Za-z0-9_./\\()-]+")
 
@@ -39,7 +40,23 @@ def finalize_transcript(
     correction_result_path: str | Path,
     confidence_threshold: float = DEFAULT_CORRECTION_CONFIDENCE_THRESHOLD,
 ) -> LectureRecord:
+    payload = _read_correction_payload(correction_result_path)
+    return finalize_transcript_payload(
+        record,
+        correction_payload=payload,
+        confidence_threshold=confidence_threshold,
+    )
+
+
+def finalize_transcript_payload(
+    record: LectureRecord,
+    *,
+    correction_payload: dict[str, object],
+    confidence_threshold: float = DEFAULT_CORRECTION_CONFIDENCE_THRESHOLD,
+    review_threshold: float = DEFAULT_CORRECTION_REVIEW_THRESHOLD,
+) -> LectureRecord:
     _validate_confidence_threshold(confidence_threshold)
+    _validate_review_threshold(review_threshold, confidence_threshold)
     if not record.segments:
         raise CorrectionError(
             ErrorDetail(
@@ -50,7 +67,7 @@ def finalize_transcript(
             )
         )
 
-    payload = _read_correction_payload(correction_result_path)
+    payload = _validate_correction_payload_object(correction_payload)
     provider_metadata = _provider_metadata(payload)
     candidates = _candidates_from_payload(payload, provider_metadata)
     if not candidates:
@@ -67,7 +84,9 @@ def finalize_transcript(
         record=record,
         candidates=candidates,
         confidence_threshold=confidence_threshold,
+        review_threshold=review_threshold,
     )
+    previous_log = _mark_stale_log_entries(record, provider_metadata)
     return replace(
         record,
         status="transcript_finalized",
@@ -75,10 +94,11 @@ def finalize_transcript(
         segments=segments,
         chunks=[],
         issues=[*record.issues, *issues],
-        correction_log=[*record.correction_log, *log_entries],
+        correction_log=[*previous_log, *log_entries],
         correction_metadata={
             **provider_metadata,
             "confidence_threshold": confidence_threshold,
+            "review_threshold": review_threshold,
         },
     )
 
@@ -89,6 +109,30 @@ def _validate_confidence_threshold(confidence_threshold: float) -> None:
             ErrorDetail(
                 code="correction_confidence_threshold_invalid",
                 message="Correction confidence threshold must be between 0 and 1.",
+                stage="correction",
+                retryable=False,
+            )
+        )
+
+
+def _validate_review_threshold(
+    review_threshold: float,
+    confidence_threshold: float,
+) -> None:
+    if review_threshold < 0 or review_threshold > 1:
+        raise ValidationError(
+            ErrorDetail(
+                code="correction_review_threshold_invalid",
+                message="Correction review threshold must be between 0 and 1.",
+                stage="correction",
+                retryable=False,
+            )
+        )
+    if review_threshold > confidence_threshold:
+        raise ValidationError(
+            ErrorDetail(
+                code="correction_review_threshold_invalid",
+                message="Correction review threshold cannot exceed apply threshold.",
                 stage="correction",
                 retryable=False,
             )
@@ -126,6 +170,10 @@ def _read_correction_payload(path_value: str | Path) -> dict[str, object]:
                 retryable=False,
             )
         ) from exc
+    return _validate_correction_payload_object(payload)
+
+
+def _validate_correction_payload_object(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValidationError(
             ErrorDetail(
@@ -208,6 +256,7 @@ def _apply_candidates(
     record: LectureRecord,
     candidates: list[CorrectionCandidate],
     confidence_threshold: float,
+    review_threshold: float,
 ) -> tuple[list[TranscriptSegment], list[CorrectionLogEntry], list[ProcessingIssue]]:
     candidate_by_id = {candidate.segment_id: candidate for candidate in candidates}
     issues = _unmapped_candidate_issues(record.segments, candidates)
@@ -225,6 +274,7 @@ def _apply_candidates(
             candidate=candidate,
             source=record.transcript_source,
             confidence_threshold=confidence_threshold,
+            review_threshold=review_threshold,
         )
         updated_segments.append(corrected_segment)
         log_entries.append(log_entry)
@@ -240,12 +290,14 @@ def _apply_candidate_to_segment(
     candidate: CorrectionCandidate,
     source: str,
     confidence_threshold: float,
+    review_threshold: float,
 ) -> tuple[TranscriptSegment, CorrectionLogEntry, ProcessingIssue | None]:
     protected_terms = _changed_protected_terms(segment.text, candidate.corrected_text)
     status, applied, issue = _candidate_decision(
         candidate=candidate,
         has_protected_term_change=bool(protected_terms),
         confidence_threshold=confidence_threshold,
+        review_threshold=review_threshold,
     )
     corrected_text = candidate.corrected_text.strip()
     next_segment = replace(segment, text=corrected_text) if applied else segment
@@ -273,6 +325,7 @@ def _candidate_decision(
     candidate: CorrectionCandidate,
     has_protected_term_change: bool,
     confidence_threshold: float,
+    review_threshold: float,
 ) -> tuple[str, bool, ProcessingIssue | None]:
     if candidate.status != "succeeded":
         return (
@@ -290,7 +343,27 @@ def _candidate_decision(
             False,
             _issue("correction_empty", "Correction text is empty.", False),
         )
-    if candidate.confidence is None or candidate.confidence < confidence_threshold:
+    if candidate.confidence is None:
+        return (
+            "review_required",
+            False,
+            _issue(
+                "correction_low_confidence",
+                "Correction confidence is below the automatic apply threshold.",
+                False,
+            ),
+        )
+    if candidate.confidence < review_threshold:
+        return (
+            "rejected",
+            False,
+            _issue(
+                "correction_below_review_threshold",
+                "Correction confidence is below the review threshold.",
+                False,
+            ),
+        )
+    if candidate.confidence < confidence_threshold:
         return (
             "review_required",
             False,
@@ -326,6 +399,37 @@ def _unmapped_candidate_issues(
         )
         for candidate in candidates
         if candidate.segment_id not in segment_ids
+    ]
+
+
+def protected_terms_for_text(text: str) -> list[str]:
+    return sorted(_protected_terms(text))
+
+
+def _mark_stale_log_entries(
+    record: LectureRecord,
+    provider_metadata: dict[str, object],
+) -> list[CorrectionLogEntry]:
+    if not record.correction_log:
+        return []
+    current_model = _optional_string(record.correction_metadata.get("model"))
+    current_prompt = _optional_string(record.correction_metadata.get("prompt_version"))
+    next_model = _optional_string(provider_metadata.get("model"))
+    next_prompt = _optional_string(provider_metadata.get("prompt_version"))
+    if current_model == next_model and current_prompt == next_prompt:
+        return list(record.correction_log)
+    return [
+        replace(
+            entry,
+            status="stale",
+            provider_metadata={
+                **entry.provider_metadata,
+                "stale_reason": "model_or_prompt_changed",
+                "next_model": next_model or "unknown",
+                "next_prompt_version": next_prompt or "unknown",
+            },
+        )
+        for entry in record.correction_log
     ]
 
 

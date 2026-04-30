@@ -10,6 +10,11 @@ from lecturedigest.anki_cli import (
     generate_cards_command,
 )
 from lecturedigest.chunking import chunk_lecture
+from lecturedigest.correction import (
+    DEFAULT_CORRECTION_CONFIDENCE_THRESHOLD,
+    DEFAULT_CORRECTION_MODEL,
+    DEFAULT_CORRECTION_PROMPT_VERSION,
+)
 from lecturedigest.enrichment import (
     DEFAULT_FRAME_SAMPLE_INTERVAL_SECONDS,
     DEFAULT_SLIDE_CHANGE_THRESHOLD,
@@ -26,6 +31,7 @@ from lecturedigest.note_cli import (
     reject_note_command,
 )
 from lecturedigest.ocr_cli import add_ocr_parser, ocr_command
+from lecturedigest.openai_correction import DEFAULT_CORRECTION_BATCH_SIZE
 from lecturedigest.quiz_cli import add_quiz_parsers, generate_quizzes_command
 from lecturedigest.rag_cli import (
     add_rag_parsers,
@@ -142,11 +148,23 @@ def _build_parser() -> argparse.ArgumentParser:
 
     finalize_parser = subparsers.add_parser("finalize-transcript")
     finalize_parser.add_argument("--lecture-id", required=True)
-    finalize_parser.add_argument("--correction-result", required=True, type=Path)
+    finalize_parser.add_argument("--correction-result", type=Path)
     finalize_parser.add_argument(
         "--confidence-threshold",
         type=float,
-        default=0.9,
+        default=DEFAULT_CORRECTION_CONFIDENCE_THRESHOLD,
+    )
+    finalize_parser.add_argument("--openai", action="store_true")
+    finalize_parser.add_argument("--dry-run", action="store_true")
+    finalize_parser.add_argument("--model", default=DEFAULT_CORRECTION_MODEL)
+    finalize_parser.add_argument(
+        "--prompt-version",
+        default=DEFAULT_CORRECTION_PROMPT_VERSION,
+    )
+    finalize_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_CORRECTION_BATCH_SIZE,
     )
 
     add_rag_parsers(subparsers)

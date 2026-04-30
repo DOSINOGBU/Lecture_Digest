@@ -44,18 +44,37 @@ class CorrectionTest(unittest.TestCase):
 
     def test_keeps_low_confidence_correction_for_review(self):
         record = _lecture_with_subtitle(self.root, "helo world")
-        correction_result = _write_correction_result(
-            self.root,
-            [_correction("seg-000001", "hello world", confidence=0.72)],
+        updated = finalize_transcript(
+            record,
+            correction_result_path=_write_correction_result(
+                self.root,
+                [_correction("seg-000001", "hello world", confidence=0.72)],
+            ),
         )
-
-        updated = finalize_transcript(record, correction_result_path=correction_result)
 
         self.assertEqual(updated.segments[0].text, "helo world")
         self.assertFalse(updated.correction_log[0].applied)
         self.assertEqual(updated.correction_log[0].status, "review_required")
         self.assertIn(
             "correction_low_confidence",
+            [issue.code for issue in updated.issues],
+        )
+
+    def test_rejects_below_review_threshold_correction(self):
+        record = _lecture_with_subtitle(self.root, "helo world")
+        updated = finalize_transcript(
+            record,
+            correction_result_path=_write_correction_result(
+                self.root,
+                [_correction("seg-000001", "hello world", confidence=0.65)],
+            ),
+        )
+
+        self.assertEqual(updated.segments[0].text, "helo world")
+        self.assertFalse(updated.correction_log[0].applied)
+        self.assertEqual(updated.correction_log[0].status, "rejected")
+        self.assertIn(
+            "correction_below_review_threshold",
             [issue.code for issue in updated.issues],
         )
 
@@ -133,6 +152,29 @@ class CorrectionTest(unittest.TestCase):
 
         self.assertEqual(context.exception.detail.code, "correction_items_invalid")
 
+    def test_marks_existing_correction_log_stale_when_model_changes(self):
+        record = _lecture_with_subtitle(self.root, "helo")
+        first_result = _write_correction_result(
+            self.root,
+            [_correction("seg-000001", "hello", confidence=0.97)],
+        )
+        first = finalize_transcript(record, correction_result_path=first_result)
+        second_result = _write_correction_result(
+            self.root,
+            [_correction("seg-000001", "hello again", confidence=0.97)],
+            model="gpt-4o-mini",
+        )
+
+        second = finalize_transcript(first, correction_result_path=second_result)
+
+        self.assertEqual(second.correction_log[0].status, "stale")
+        self.assertEqual(
+            second.correction_log[0].provider_metadata["stale_reason"],
+            "model_or_prompt_changed",
+        )
+        self.assertEqual(second.correction_log[1].status, "applied")
+        self.assertEqual(second.segments[0].text, "hello again")
+
 
 def _lecture_with_subtitle(root: Path, text: str):
     video = root / "lecture.mp4"
@@ -154,19 +196,26 @@ def _lecture_with_subtitle(root: Path, text: str):
 def _write_correction_result(
     root: Path,
     corrections: list[dict[str, object]],
+    *,
+    model: str = "gpt-4o",
 ) -> Path:
     correction_result = root / "corrections.json"
-    _write_corrections(correction_result, corrections)
+    _write_corrections(correction_result, corrections, model=model)
     return correction_result
 
 
-def _write_corrections(path: Path, corrections: list[dict[str, object]]) -> None:
+def _write_corrections(
+    path: Path,
+    corrections: list[dict[str, object]],
+    *,
+    model: str,
+) -> None:
     path.write_text(
         json.dumps(
             {
                 "provider_metadata": {
                     "provider": "openai_responses",
-                    "model": "gpt-4o",
+                    "model": model,
                     "prompt_version": "transcript-correction-v1",
                     "duration_ms": 100,
                     "cost_estimate_usd": 0.01,

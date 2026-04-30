@@ -87,6 +87,101 @@ class CorrectionCliTest(unittest.TestCase):
         self.assertIn("status=transcript_finalized", output)
         self.assertIn("applied=1", output)
 
+    def test_openai_dry_run_outputs_preview_without_updating_store(self):
+        video = self.root / "lecture.mp4"
+        subtitle = self.root / "lecture.srt"
+        video.write_bytes(b"fake video")
+        subtitle.write_text(
+            "1\n00:00:00,000 --> 00:00:03,000\nhelo\n",
+            encoding="utf-8",
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register",
+                    "--video",
+                    str(video),
+                    "--subtitle",
+                    str(subtitle),
+                    "--title",
+                    "Intro",
+                    "--instructor",
+                    "Teacher",
+                    "--category",
+                    "Coding",
+                ]
+            )
+        lecture_id = _read_lecture_id(self.store)
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "finalize-transcript",
+                    "--lecture-id",
+                    lecture_id,
+                    "--openai",
+                    "--dry-run",
+                ]
+            )
+
+        payload = json.loads(self.store.read_text(encoding="utf-8"))[0]
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("finalize-transcript start", output)
+        self.assertIn("openai dry-run", output)
+        self.assertIn("willUpload=false", output)
+        self.assertIn("willSave=false", output)
+        self.assertEqual(payload["segments"][0]["text"], "helo")
+        self.assertEqual(payload["correction_log"], [])
+
+    def test_finalize_transcript_requires_result_without_openai(self):
+        video = self.root / "lecture.mp4"
+        subtitle = self.root / "lecture.srt"
+        video.write_bytes(b"fake video")
+        subtitle.write_text(
+            "1\n00:00:00,000 --> 00:00:03,000\nhelo\n",
+            encoding="utf-8",
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register",
+                    "--video",
+                    str(video),
+                    "--subtitle",
+                    str(subtitle),
+                    "--title",
+                    "Intro",
+                    "--instructor",
+                    "Teacher",
+                    "--category",
+                    "Coding",
+                ]
+            )
+        lecture_id = _read_lecture_id(self.store)
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "finalize-transcript",
+                    "--lecture-id",
+                    lecture_id,
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("correction_result_required", stderr.getvalue())
+
     def test_finalize_transcript_outputs_error_state(self):
         video = self.root / "lecture.mp4"
         subtitle = self.root / "lecture.srt"
