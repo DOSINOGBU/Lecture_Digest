@@ -75,6 +75,32 @@ class OpenAIQuizzesTest(unittest.TestCase):
             self.assertEqual(item["source_note_candidate_id"], "note-1")
             self.assertEqual(item["model"], DEFAULT_OPENAI_QUIZ_MODEL)
 
+    def test_randomizes_openai_multiple_choice_answer_label(self):
+        record = _approved_record()
+        client = sequence_openai_client([_quiz_response([_quiz_payload()[0]])])
+
+        result = generate_quizzes_with_openai(record, client=client, quiz_count=1)
+
+        item = result.record.quiz_items[0]
+        correct_choices = [
+            choice for choice in item["choices"] if choice.get("is_correct") is True
+        ]
+        self.assertEqual(len(correct_choices), 1)
+        self.assertEqual(item["correct_answer"], correct_choices[0]["id"])
+        self.assertNotEqual(item["correct_answer"], "A")
+
+    def test_generates_unique_ids_for_similar_openai_questions(self):
+        record = _approved_record()
+        base_question = "DOM and CSS are related in browser rendering because "
+        first = {**_quiz_payload()[0], "question": base_question + "HTML creates structure."}
+        second = {**_quiz_payload()[0], "question": base_question + "CSS controls presentation."}
+        client = sequence_openai_client([_quiz_response([first, second])])
+
+        result = generate_quizzes_with_openai(record, client=client, quiz_count=2)
+
+        quiz_ids = [item["quiz_id"] for item in result.record.quiz_items]
+        self.assertEqual(len(quiz_ids), len(set(quiz_ids)))
+
     def test_requires_approved_note(self):
         with self.assertRaises(QuizGenerationError) as context:
             generate_quizzes_with_openai(lecture_record([]), dry_run=True)

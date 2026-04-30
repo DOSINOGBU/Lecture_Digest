@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import random
 import re
 
 from lecturedigest.errors import ErrorDetail, QuizGenerationError
@@ -90,12 +92,16 @@ def _quiz_from_payload(
     source_ids = _source_segment_ids(item)
     source = _source_payload(record, source_ids, segment_lookup, section)
     difficulty = _difficulty(item.get("difficulty"))
+    quiz_id = _quiz_id(record, question_type, item)
+    choices = _choices(item, question_type)
+    if question_type == "multiple_choice":
+        choices = _shuffled_choices(choices, f"{quiz_id}:{item.get('question', '')}")
     quiz_item = {
-        "quiz_id": _quiz_id(record, question_type, item),
+        "quiz_id": quiz_id,
         "question_type": question_type,
         "question": str(item.get("question") or "").strip(),
-        "choices": _choices(item, question_type),
-        "correct_answer": str(item.get("correct_answer") or "").strip(),
+        "choices": choices,
+        "correct_answer": _correct_answer(item, question_type, choices),
         "expected_answer": str(item.get("expected_answer") or "").strip(),
         "rubric": _string_list(item.get("rubric", [])),
         "explanation": str(item.get("explanation") or "").strip(),
@@ -127,17 +133,54 @@ def _choices(item: dict[str, object], question_type: str) -> list[dict[str, obje
         return []
     choices = []
     labels = ["A", "B", "C", "D"]
+    raw_answer = str(item.get("correct_answer") or "").strip()
     for index, raw in enumerate(raw_choices[:4]):
         if isinstance(raw, dict):
             choice_id = str(raw.get("id") or labels[index]).strip() or labels[index]
             text = str(raw.get("text") or "").strip()
-            is_correct = raw.get("is_correct") is True
+            is_correct = (
+                raw.get("is_correct") is True
+                or choice_id.lower() == raw_answer.lower()
+                or text.strip().lower() == raw_answer.lower()
+            )
         else:
             choice_id = labels[index]
             text = str(raw).strip()
-            is_correct = False
+            is_correct = (
+                choice_id.lower() == raw_answer.lower()
+                or text.strip().lower() == raw_answer.lower()
+            )
         choices.append({"id": choice_id, "text": text, "is_correct": is_correct})
     return choices
+
+
+def _shuffled_choices(
+    choices: list[dict[str, object]],
+    seed_text: str,
+) -> list[dict[str, object]]:
+    if len(choices) < 2:
+        return choices
+    shuffled = [dict(choice) for choice in choices]
+    rng = random.Random(_stable_int(seed_text))
+    rng.shuffle(shuffled)
+    labels = ["A", "B", "C", "D"]
+    return [
+        {**choice, "id": labels[index]}
+        for index, choice in enumerate(shuffled)
+    ]
+
+
+def _correct_answer(
+    item: dict[str, object],
+    question_type: str,
+    choices: list[dict[str, object]],
+) -> str:
+    if question_type != "multiple_choice":
+        return str(item.get("correct_answer") or "").strip()
+    for choice in choices:
+        if choice.get("is_correct") is True:
+            return str(choice.get("id") or "").strip()
+    return str(item.get("correct_answer") or "").strip()
 
 
 def _source_segment_ids(item: dict[str, object]) -> list[str]:
@@ -240,8 +283,9 @@ def _quiz_id(record: LectureRecord, question_type: str, item: dict[str, object])
     if explicit:
         return explicit
     seed = f"{question_type}:{item.get('note_section_id', '')}:{item.get('question', '')}"
-    safe = re.sub(r"[^0-9A-Za-z_-]+", "-", seed)[:90].strip("-")
-    return f"{record.lecture_id}:openai-quiz:{safe or question_type}"
+    safe = re.sub(r"[^0-9A-Za-z_-]+", "-", seed)[:80].strip("-")
+    suffix = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8]
+    return f"{record.lecture_id}:openai-quiz:{safe or question_type}-{suffix}"
 
 
 def _jump_link(record: LectureRecord, start_ts: str) -> str:
@@ -312,6 +356,11 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item)]
+
+
+def _stable_int(value: str) -> int:
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:12]
+    return int(digest, 16)
 
 
 def _quiz_error(code: str, message: str) -> QuizGenerationError:
