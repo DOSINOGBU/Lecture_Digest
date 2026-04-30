@@ -2,12 +2,12 @@
 
 ## Goal
 
-시간축 세그먼트를 검색 가능한 청크로 만들고, 임베딩 저장, L1/L2/L3 요약, 출처 기반 RAG 답변까지 연결합니다.
+교정 완료 transcript와 정제 OCR을 검색 가능한 청크로 만들고, 임베딩 저장, L1/L2/L3 요약, 출처 기반 RAG 답변까지 연결합니다.
 
 ## Scope
 
 - 60~90초 기본 청크와 15초 오버랩.
-- 청크 payload에 lecture_id, chapter, start_ts, end_ts, speaker, text, ocr_text 포함.
+- 청크 payload에 lecture_id, clip metadata, chapter, start_ts, end_ts, speaker, corrected_text, refined_ocr_text 포함.
 - 임베딩 모델 후보: `text-embedding-3-large` 또는 `voyage-3`.
 - Qdrant 기본 후보 저장.
 - L1 섹션 요약, L2 챕터 요약, L3 강의 개요/TL;DR/학습 목표.
@@ -17,6 +17,8 @@
 
 ## Out Of Scope
 
+- 폴더 입력과 STT 호출.
+- OCR 추출 자체.
 - 정제 학습 노트 생성.
 - 교정 검수 UI.
 - 개념 그래프.
@@ -26,6 +28,7 @@
 - 챕터 정보가 없는 강의의 자동 분할 기준은 미정입니다.
 - hybrid BM25+dense와 reranker는 MVP에서 단순 검색 후 고도화할 수 있습니다.
 - 모델/prompt 변경으로 인덱스가 stale 상태가 되어도 자동 재생성하지 않고 수동 재생성 액션을 둡니다.
+- RAG 입력은 교정 완료 transcript를 우선 사용합니다.
 
 ## Steps
 
@@ -43,11 +46,13 @@
 - 근거가 부족한 질문은 답변을 꾸며내지 않습니다.
 - 일반 질의 응답 시간은 30초 이내를 목표로 측정합니다.
 - 정제 노트 인덱스 결과도 원본 segment로 역추적됩니다.
+- 대표 질문 top 3 안에 예상 timestamp chunk가 들어오는지 검수합니다.
 
 ## Risks
 
 - 청크 경계가 부적절하면 RAG 답변 근거가 끊길 수 있습니다.
 - 임베딩/LLM 호출 비용이 긴 강의에서 급증할 수 있습니다.
+- 정제 OCR이 과도하게 섞이면 음성 근거와 화면 근거가 혼동될 수 있습니다.
 
 ## Result
 
