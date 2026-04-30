@@ -12,6 +12,14 @@ from lecturedigest.anki_cards import (
     generate_anki_cards,
 )
 from lecturedigest.errors import ErrorDetail, ValidationError
+from lecturedigest.anki_policy import DEFAULT_CARD_TYPES
+from lecturedigest.openai_anki_cards import (
+    DEFAULT_CARD_BATCH_SIZE_SECTIONS,
+    DEFAULT_OPENAI_CARD_MODEL,
+    DEFAULT_OPENAI_CARD_PROMPT_VERSION,
+    format_openai_card_dry_run,
+    generate_anki_cards_with_openai,
+)
 from lecturedigest.storage import JsonLectureRepository
 
 
@@ -26,14 +34,43 @@ def generate_cards_command(
     print(
         "[LectureAnki] generate-cards start "
         f"{{ lectureId={args.lecture_id}; maxCards={args.max_cards}; "
-        f"cardModel={args.card_model}; promptVersion={args.prompt_version} }}"
+        f"cardTypes={args.card_types}; openai={args.openai}; "
+        f"cardModel={_card_model(args)}; promptVersion={_prompt_version(args)} }}"
     )
+    if args.openai:
+        result = generate_anki_cards_with_openai(
+            record,
+            max_cards=args.max_cards,
+            card_types=args.card_types,
+            card_model=_card_model(args),
+            prompt_version=_prompt_version(args),
+            dry_run=args.dry_run,
+            resume=args.resume,
+            time_budget_seconds=args.time_budget_seconds,
+            batch_size_sections=args.batch_size_sections,
+            checkpoint=repository.save,
+        )
+        if result.dry_run:
+            print(format_openai_card_dry_run(result))
+            return 0
+        repository.save(result.record)
+        print(format_card_generation_result(result.record))
+        return 0
+
     updated = generate_anki_cards(
         record,
         max_cards=args.max_cards,
-        card_model=args.card_model,
-        prompt_version=args.prompt_version,
+        card_types=args.card_types,
+        card_model=_card_model(args),
+        prompt_version=_prompt_version(args),
     )
+    if args.dry_run:
+        print(
+            "[LectureAnki] local dry-run "
+            "{ externalDataBoundary=none; willUpload=false; willSave=false }"
+        )
+        print(format_card_generation_result(updated))
+        return 0
     repository.save(updated)
     print(format_card_generation_result(updated))
     return 0
@@ -74,10 +111,24 @@ def add_anki_parsers(subparsers: argparse._SubParsersAction) -> None:
     generate_parser = subparsers.add_parser("generate-cards")
     generate_parser.add_argument("--lecture-id", required=True)
     generate_parser.add_argument("--max-cards", type=int, default=DEFAULT_MAX_CARDS)
-    generate_parser.add_argument("--card-model", default=DEFAULT_CARD_MODEL)
+    generate_parser.add_argument(
+        "--card-types",
+        default=",".join(DEFAULT_CARD_TYPES),
+        help="Comma-separated card types: qa,cloze,code,application.",
+    )
+    generate_parser.add_argument("--card-model", default=None)
     generate_parser.add_argument(
         "--prompt-version",
-        default=DEFAULT_CARD_PROMPT_VERSION,
+        default=None,
+    )
+    generate_parser.add_argument("--openai", action="store_true")
+    generate_parser.add_argument("--dry-run", action="store_true")
+    generate_parser.add_argument("--resume", action="store_true")
+    generate_parser.add_argument("--time-budget-seconds", type=float)
+    generate_parser.add_argument(
+        "--batch-size-sections",
+        type=int,
+        default=DEFAULT_CARD_BATCH_SIZE_SECTIONS,
     )
 
     export_parser = subparsers.add_parser("export-anki")
@@ -95,12 +146,15 @@ def add_anki_parsers(subparsers: argparse._SubParsersAction) -> None:
 def format_card_generation_result(record) -> str:
     flagged = sum(1 for card in record.flashcards if card.get("status") == "flagged")
     ready = len(record.flashcards) - flagged
+    plan = record.card_metadata.get("generation_plan", {})
     lines = [
         "[LectureAnki] generate-cards success "
         f"{{ lectureId={record.lecture_id}; status={record.status}; "
         f"stage={record.stage}; cards={len(record.flashcards)}; "
         f"ready={ready}; flagged={flagged}; "
-        f"validityRate={record.card_metadata.get('validity_rate', 0)} }}"
+        f"validityRate={record.card_metadata.get('validity_rate', 0)}; "
+        f"strategy={plan.get('strategy', 'unknown')}; "
+        f"targetCards={plan.get('target_card_count', len(record.flashcards))} }}"
     ]
     for card in record.flashcards:
         lines.append(
@@ -110,6 +164,22 @@ def format_card_generation_result(record) -> str:
             f"status={card.get('status')}"
         )
     return "\n".join(lines)
+
+
+def _card_model(args: argparse.Namespace) -> str:
+    if args.card_model:
+        return args.card_model
+    return DEFAULT_OPENAI_CARD_MODEL if args.openai else DEFAULT_CARD_MODEL
+
+
+def _prompt_version(args: argparse.Namespace) -> str:
+    if args.prompt_version:
+        return args.prompt_version
+    return (
+        DEFAULT_OPENAI_CARD_PROMPT_VERSION
+        if args.openai
+        else DEFAULT_CARD_PROMPT_VERSION
+    )
 
 
 def _load_record(

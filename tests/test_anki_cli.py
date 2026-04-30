@@ -47,6 +47,8 @@ class AnkiCliTest(unittest.TestCase):
                     "generate-cards",
                     "--lecture-id",
                     lecture_id,
+                    "--card-types",
+                    "qa,cloze",
                 ]
             )
             export_exit = main(
@@ -65,6 +67,7 @@ class AnkiCliTest(unittest.TestCase):
         self.assertEqual(generate_exit, 0)
         self.assertEqual(export_exit, 0)
         self.assertIn("generate-cards start", output)
+        self.assertIn("cardTypes=qa,cloze", output)
         self.assertIn("generate-cards success", output)
         self.assertIn("export-anki success", output)
         self.assertTrue(output_file.exists())
@@ -92,6 +95,33 @@ class AnkiCliTest(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("command failed", stderr.getvalue())
         self.assertIn("approved_note_required", stderr.getvalue())
+
+    def test_openai_generate_cards_dry_run_does_not_save_cards(self):
+        lecture_id = _prepare_approved_note(self.store, self.root)
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "generate-cards",
+                    "--lecture-id",
+                    lecture_id,
+                    "--openai",
+                    "--dry-run",
+                    "--batch-size-sections",
+                    "10",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("openai dry-run", output)
+        self.assertIn("willSave=false", output)
+        payload = json.loads(self.store.read_text(encoding="utf-8"))
+        self.assertEqual(payload[0]["status"], "note_approved")
+        self.assertEqual(payload[0]["flashcards"], [])
 
 
 def _prepare_approved_note(store: Path, root: Path) -> str:
