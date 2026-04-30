@@ -2,7 +2,7 @@
 
 ## Status
 
-Ready.
+Completed.
 
 ## Goal
 
@@ -26,13 +26,13 @@ Add a quiz session workflow so users can take a randomized quiz, submit answers,
 
 ## Steps
 
-- [ ] Define quiz session payloads inside `LectureRecord.quiz_metadata` or a dedicated compatible field.
-- [ ] Add CLI commands for starting sessions and submitting answers.
-- [ ] Implement deterministic random ordering with seed support.
-- [ ] Auto-grade multiple-choice answers locally.
-- [ ] Add OpenAI rubric grading for written answers.
-- [ ] Store model, prompt version, source question ids, feedback, score, and retryable failure metadata.
-- [ ] Add loading, empty, success, and error states in CLI output.
+- [x] Define quiz session payloads inside `LectureRecord.quiz_metadata` or a dedicated compatible field.
+- [x] Add CLI commands for starting sessions and submitting answers.
+- [x] Implement deterministic random ordering with seed support.
+- [x] Auto-grade multiple-choice answers locally.
+- [x] Add OpenAI rubric grading for written answers.
+- [x] Store model, prompt version, source question ids, feedback, score, and retryable failure metadata.
+- [x] Add loading, empty, success, and error states in CLI output.
 
 ## Validation
 
@@ -41,6 +41,15 @@ Add a quiz session workflow so users can take a randomized quiz, submit answers,
 - `git diff --check`
 - `powershell -ExecutionPolicy Bypass -File scripts/validate-harness.ps1 -Mode Project`
 - `powershell -ExecutionPolicy Bypass -File scripts/validate-harness.ps1 -CodeHealth -Mode Project`
+
+## Result
+
+- Added quiz session state under `LectureRecord.quiz_metadata.sessions`.
+- Added `start-quiz-session`, `submit-quiz-answer`, and `grade-quiz-session --openai`.
+- Multiple-choice answers are graded locally at submit time.
+- Written answers are kept as `pending_ai_grading` until OpenAI rubric grading runs.
+- OpenAI grading stores model, prompt version, call metadata, retryable failure details, score, feedback, and rubric results.
+- CLI output includes start, empty, success, and error states.
 
 ## Assumptions
 
