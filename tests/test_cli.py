@@ -78,6 +78,77 @@ class CliTest(unittest.TestCase):
         self.assertIn("command failed", output)
         self.assertIn("video_not_found", output)
 
+    def test_register_folder_outputs_loading_and_success_state(self):
+        root = self.root / "Course"
+        middle = root / "Major" / "Middle"
+        middle.mkdir(parents=True)
+        (middle / "lecture.mp4").write_bytes(b"fake video")
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register-folder",
+                    "--folder",
+                    str(root),
+                    "--instructor",
+                    "Teacher",
+                ]
+            )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("register-folder start", output)
+        self.assertIn("register-folder success", output)
+        self.assertIn("records=1", output)
+        self.assertIn("sttRequired=1", output)
+
+    def test_register_folder_outputs_empty_state(self):
+        root = self.root / "Course"
+        root.mkdir()
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register-folder",
+                    "--folder",
+                    str(root),
+                    "--instructor",
+                    "Teacher",
+                ]
+            )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("register-folder empty", output)
+        self.assertIn("records=0", output)
+
+    def test_register_folder_outputs_error_state(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register-folder",
+                    "--folder",
+                    str(self.root / "missing"),
+                    "--instructor",
+                    "Teacher",
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("command failed", stderr.getvalue())
+        self.assertIn("folder_not_found", stderr.getvalue())
+
     def test_chunk_outputs_empty_state(self):
         stdout = io.StringIO()
 

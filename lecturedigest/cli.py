@@ -6,6 +6,7 @@ from pathlib import Path
 
 from lecturedigest.chunking import chunk_lecture
 from lecturedigest.errors import ErrorDetail, LectureDigestError, ValidationError
+from lecturedigest.folder_ingestion import FolderIngestionResult, register_lecture_folder
 from lecturedigest.ingestion import register_lecture
 from lecturedigest.models import LectureRecord
 from lecturedigest.storage import JsonLectureRepository
@@ -22,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "register":
             return _register(args, repository)
+        if args.command == "register-folder":
+            return _register_folder(args, repository)
         if args.command == "list":
             return _list(repository)
         if args.command == "import-stt":
@@ -53,6 +56,10 @@ def _build_parser() -> argparse.ArgumentParser:
     register_parser.add_argument("--instructor", required=True)
     register_parser.add_argument("--category", required=True)
 
+    register_folder_parser = subparsers.add_parser("register-folder")
+    register_folder_parser.add_argument("--folder", required=True, type=Path)
+    register_folder_parser.add_argument("--instructor", required=True)
+
     chunk_parser = subparsers.add_parser("chunk")
     chunk_parser.add_argument("--lecture-id", required=True)
     chunk_parser.add_argument("--window-seconds", type=int, default=90)
@@ -81,6 +88,28 @@ def _register(args: argparse.Namespace, repository: JsonLectureRepository) -> in
     )
     repository.save(record)
     print(_format_record(record))
+    return 0
+
+
+def _register_folder(
+    args: argparse.Namespace,
+    repository: JsonLectureRepository,
+) -> int:
+    print(
+        "[LectureIngestion] register-folder start "
+        f"{{ folder={args.folder} }}"
+    )
+    result = register_lecture_folder(
+        folder_path=args.folder,
+        instructor=args.instructor,
+    )
+    if not result.records:
+        print(_format_folder_empty(result))
+        return 0
+
+    for record in result.records:
+        repository.save(record)
+    print(_format_folder_result(result))
     return 0
 
 
@@ -164,6 +193,32 @@ def _format_record(record: LectureRecord) -> str:
         f"{{ lectureId={record.lecture_id}; status={record.status}; "
         f"stage={record.stage}; transcriptSource={record.transcript_source}; "
         f"segments={segment_count}; chunks={chunk_count}; issues={issue_count} }}"
+    )
+
+
+def _format_folder_result(result: FolderIngestionResult) -> str:
+    subtitle_ready = sum(
+        1 for record in result.records if record.transcript_source == "subtitle"
+    )
+    stt_required = sum(
+        1 for record in result.records if record.transcript_source == "stt_pending"
+    )
+    subtitle_unmatched = sum(
+        1 for record in result.records if record.status == "subtitle_unmatched"
+    )
+    return (
+        "[LectureIngestion] register-folder success "
+        f"{{ lectureTitle={result.lecture_title}; records={len(result.records)}; "
+        f"subtitleReady={subtitle_ready}; sttRequired={stt_required}; "
+        f"subtitleUnmatched={subtitle_unmatched}; batchIssues={len(result.issues)} }}"
+    )
+
+
+def _format_folder_empty(result: FolderIngestionResult) -> str:
+    return (
+        "[LectureIngestion] register-folder empty "
+        f"{{ lectureTitle={result.lecture_title}; records=0; "
+        f"batchIssues={len(result.issues)} }}"
     )
 
 

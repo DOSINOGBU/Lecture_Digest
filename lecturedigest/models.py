@@ -57,6 +57,11 @@ class LectureRecord:
     chunks: list[TranscriptChunk] = field(default_factory=list)
     issues: list[ProcessingIssue] = field(default_factory=list)
     created_at: str | None = None
+    input_mode: str = "file"
+    lecture_title: str | None = None
+    major_category: str | None = None
+    middle_category: str | None = None
+    clip_title: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -73,6 +78,11 @@ class LectureRecord:
             "chunks": [chunk.to_dict() for chunk in self.chunks],
             "issues": [issue.to_dict() for issue in self.issues],
             "created_at": self.created_at,
+            "input_mode": self.input_mode,
+            "lecture_title": self.lecture_title,
+            "major_category": self.major_category,
+            "middle_category": self.middle_category,
+            "clip_title": self.clip_title,
         }
 
     @classmethod
@@ -144,6 +154,11 @@ class LectureRecord:
                 if payload.get("created_at") is not None
                 else None
             ),
+            input_mode=str(payload.get("input_mode", "file")),
+            lecture_title=_optional_string(payload.get("lecture_title")),
+            major_category=_optional_string(payload.get("major_category")),
+            middle_category=_optional_string(payload.get("middle_category")),
+            clip_title=_optional_string(payload.get("clip_title")),
         )
 
 
@@ -157,3 +172,9 @@ def _as_string_list(value: object) -> list[object]:
     if not isinstance(value, list):
         return []
     return value
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
