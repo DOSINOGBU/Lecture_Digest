@@ -2,7 +2,7 @@
 
 ## 상태
 
-대기
+완료
 
 ## 목표
 
@@ -147,3 +147,17 @@ PRD의 최소 항목 수는 기본 목표이지만, 원천 텍스트가 부족�
 - 골든 노트 샘플의 최종 승인 담당자가 필요하다.
 - `topic_shift_count`를 OCR 기반으로 강하게 볼지, 자막/교정본 기반으로 우선 볼지 결정이 필요하다.
 - `chaptered note`의 실제 분리 기준은 22번 품질 재검증에서 조정할 수 있다.
+
+## 결과
+
+구현 완료.
+
+- PRD 표준 Markdown 구조를 로컬/OpenAI 노트 생성 계약에 반영했다.
+- `estimated_tokens`, segment 수, topic shift, 코드/흐름/비교 신호를 계산하는 content profile을 추가했다.
+- compact, standard, expanded, chaptered note 전략을 metadata와 prompt contract에 반영했다.
+- 원천 텍스트가 짧은 경우 PRD 최소 개수를 억지로 채우지 않고 부족 flag를 남기도록 검증기를 추가했다.
+- OpenAI 응답 파서가 PRD 섹션, numbered topic, 출처 segment/timestamp를 검증하도록 갱신했다.
+- 실제 강의 샘플로 `gpt-4o` OpenAI 노트 후보 3개를 재생성했다.
+- 실제 후보는 이전 4섹션 MVP보다 PRD 구조가 풍부해졌지만, 세 후보 모두 validation flagged 상태이므로 골든 노트로 승인하지 않는다.
+- 검증 보고서: `docs/validation/note-prd-alignment-2026-04-30.md`
+- 남은 품질 재검증과 골든 승인 작업은 `22-real-lecture-quality-revalidation.md`에서 이어서 수행한다.
