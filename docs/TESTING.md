@@ -22,6 +22,7 @@
 | 테스트 명령 감지 | `powershell -ExecutionPolicy Bypass -File scripts/init-testing-commands.ps1` | 감지 결과만 출력, 파일 변경 없음 |
 | 테스트 명령 적용 | `powershell -ExecutionPolicy Bypass -File scripts/init-testing-commands.ps1 -Apply` | 확인 후 `docs/TESTING.md` 명령 표 갱신 |
 | validator 자기 테스트 | `powershell -ExecutionPolicy Bypass -File scripts/tests/run-validator-fixtures.ps1` | fixture 기반 하네스 검증 |
+| 버전 관리 추천 | `powershell -ExecutionPolicy Bypass -File scripts/recommend-version-control.ps1 -VerificationStatus Passed` | 커밋, 푸시, PR 타이밍 조언만 출력 |
 
 ## Verification Policy
 

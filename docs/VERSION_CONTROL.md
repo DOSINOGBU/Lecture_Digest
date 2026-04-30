@@ -24,6 +24,24 @@
 
 검증을 실행할 수 없으면 커밋 메시지로 숨기지 말고 완료 보고에 이유와 대체 확인 방법을 남깁니다.
 
+## Automated Recommendation
+
+작업 완료 보고 전에는 아래 명령으로 커밋, 푸시, PR 타이밍을 판정합니다. 이 명령은 Git 상태를 읽기만 하며 `git add`, `git commit`, `git push`를 실행하지 않습니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/recommend-version-control.ps1 -VerificationStatus Passed
+```
+
+`-VerificationStatus`는 `Passed`, `Partial`, `Failed`, `NotRun` 중 하나로 기록합니다. 구조화된 후속 자동화가 필요하면 `-Json`을 함께 사용합니다.
+
+| 판단 | 추천 조건 | 보류 또는 금지 조건 |
+|---|---|---|
+| Commit | 변경이 있고 검증이 통과 또는 부분 통과했으며 diff check와 민감 파일 검사를 통과 | 검증 실패/미실행, 충돌, 민감 파일 의심, diff check 실패, 목적 분리 의심 |
+| Push | 작업 트리가 clean이고, topic branch가 upstream보다 ahead이며, 검증이 통과 | uncommitted change, behind 상태, 검증 미완료, upstream 없음 |
+| PR | topic branch가 clean/pushed/verified 상태이고 `origin/main`과 차이가 있음 | `main` 브랜치, dirty tree, push 전 local commit, 검증 미완료 |
+
+`main` 직접 push는 기본 보류합니다. 필요한 경우 topic branch로 분리하거나 PR 흐름을 사용합니다.
+
 ## Commit Message Format
 
 ```text
