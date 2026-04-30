@@ -25,6 +25,7 @@ from lecturedigest.note_cli import (
     generate_notes_command,
     reject_note_command,
 )
+from lecturedigest.ocr_cli import add_ocr_parser, ocr_command
 from lecturedigest.quiz_cli import add_quiz_parsers, generate_quizzes_command
 from lecturedigest.rag_cli import (
     add_rag_parsers,
@@ -58,6 +59,8 @@ def main(argv: list[str] | None = None) -> int:
             return _import_stt(args, repository)
         if args.command == "import-ocr":
             return _import_ocr(args, repository)
+        if args.command == "ocr":
+            return ocr_command(args, repository)
         if args.command == "finalize-transcript":
             return finalize_transcript_command(args, repository)
         if args.command == "chunk":
@@ -134,6 +137,8 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_SLIDE_CHANGE_THRESHOLD,
     )
+
+    add_ocr_parser(subparsers)
 
     finalize_parser = subparsers.add_parser("finalize-transcript")
     finalize_parser.add_argument("--lecture-id", required=True)

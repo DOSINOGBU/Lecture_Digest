@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from lecturedigest.chunking import chunk_lecture
-from lecturedigest.enrichment import apply_ocr_enrichment
+from lecturedigest.enrichment import apply_ocr_enrichment, apply_ocr_enrichment_payload
 from lecturedigest.errors import EnrichmentError, ValidationError
 from lecturedigest.ingestion import register_lecture
 
@@ -13,12 +13,13 @@ class EnrichmentTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
+        self.record = _lecture_with_subtitle(self.root)
 
     def tearDown(self):
         self.temp_dir.cleanup()
 
     def test_imports_slide_ocr_and_links_refined_text_to_segments(self):
-        record = _lecture_with_subtitle(self.root)
+        record = self.record
         ocr_result = self.root / "ocr.json"
         _write_ocr_payload(
             ocr_result,
@@ -57,7 +58,7 @@ class EnrichmentTest(unittest.TestCase):
         self.assertEqual(updated.segments[1].source_frame_ts, "00:00:05.000")
 
     def test_ocr_failure_records_issue_without_blocking_transcript(self):
-        record = _lecture_with_subtitle(self.root)
+        record = self.record
         ocr_result = self.root / "ocr.json"
         _write_ocr_payload(
             ocr_result,
@@ -82,7 +83,7 @@ class EnrichmentTest(unittest.TestCase):
         self.assertIn("ocr_failed", [issue.code for issue in updated.issues])
 
     def test_low_resolution_frame_is_flagged_but_still_linked(self):
-        record = _lecture_with_subtitle(self.root)
+        record = self.record
         ocr_result = self.root / "ocr.json"
         _write_ocr_payload(
             ocr_result,
@@ -107,7 +108,7 @@ class EnrichmentTest(unittest.TestCase):
         )
 
     def test_chunking_carries_unique_refined_ocr_text(self):
-        record = _lecture_with_subtitle(self.root)
+        record = self.record
         ocr_result = self.root / "ocr.json"
         _write_ocr_payload(
             ocr_result,
@@ -144,7 +145,7 @@ class EnrichmentTest(unittest.TestCase):
         self.assertEqual(context.exception.detail.code, "segments_required")
 
     def test_rejects_invalid_ocr_result_schema(self):
-        record = _lecture_with_subtitle(self.root)
+        record = self.record
         ocr_result = self.root / "ocr.json"
         ocr_result.write_text('{"frames": "bad"}', encoding="utf-8")
 
@@ -152,6 +153,64 @@ class EnrichmentTest(unittest.TestCase):
             apply_ocr_enrichment(record, ocr_result_path=ocr_result)
 
         self.assertEqual(context.exception.detail.code, "ocr_frames_invalid")
+
+    def test_accepts_in_memory_ocr_payload(self):
+        record = self.record
+        payload = _ocr_payload(
+            frames=[
+                _frame(
+                    "00:00:00,500",
+                    change_score=1.0,
+                    raw="Raw",
+                    refined="Refined",
+                )
+            ]
+        )
+
+        updated = apply_ocr_enrichment_payload(record, ocr_payload=payload)
+
+        self.assertEqual(updated.status, "ocr_enriched")
+        self.assertEqual(updated.slides[0].raw_ocr_text, "Raw")
+        self.assertEqual(updated.segments[0].ocr_text, "Refined")
+
+    def test_unmapped_ocr_frame_records_issue(self):
+        record = self.record
+        payload = _ocr_payload(
+            frames=[
+                _frame(
+                    "01:00:00,000",
+                    change_score=1.0,
+                    raw="Raw late slide",
+                    refined="Refined late slide",
+                )
+            ]
+        )
+
+        updated = apply_ocr_enrichment_payload(record, ocr_payload=payload)
+
+        self.assertEqual(updated.status, "transcript_ready")
+        self.assertEqual(updated.segments[0].ocr_text, None)
+        self.assertIn("ocr_unmapped", [issue.code for issue in updated.issues])
+
+    def test_empty_refined_ocr_is_flagged_without_segment_link(self):
+        record = self.record
+        payload = _ocr_payload(
+            frames=[
+                _frame(
+                    "00:00:00,500",
+                    change_score=1.0,
+                    raw="",
+                    refined="",
+                )
+            ]
+        )
+
+        updated = apply_ocr_enrichment_payload(record, ocr_payload=payload)
+
+        self.assertEqual(updated.segments[0].ocr_text, None)
+        issue_codes = [issue.code for issue in updated.issues]
+        self.assertIn("ocr_raw_empty", issue_codes)
+        self.assertIn("ocr_refined_empty", issue_codes)
 
 
 def _lecture_with_subtitle(root: Path):
@@ -173,23 +232,22 @@ def _lecture_with_subtitle(root: Path):
 
 
 def _write_ocr_payload(path: Path, *, frames: list[dict[str, object]]) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "provider_metadata": {
-                    "provider": "openai_vision",
-                    "model": "vision-capable-model",
-                    "prompt_version": "ocr-v1",
-                    "detail": "original",
-                    "status": "succeeded",
-                    "duration_ms": 120,
-                    "cost_estimate_usd": 0.01,
-                },
-                "frames": frames,
-            }
-        ),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps(_ocr_payload(frames=frames)), encoding="utf-8")
+
+
+def _ocr_payload(*, frames: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "provider_metadata": {
+            "provider": "openai_vision",
+            "model": "vision-capable-model",
+            "prompt_version": "ocr-v1",
+            "detail": "original",
+            "status": "succeeded",
+            "duration_ms": 120,
+            "cost_estimate_usd": 0.01,
+        },
+        "frames": frames,
+    }
 
 
 def _frame(

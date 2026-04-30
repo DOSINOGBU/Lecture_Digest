@@ -33,6 +33,33 @@ def apply_ocr_enrichment(
         )
 
     payload = _read_ocr_payload(ocr_result_path)
+    return apply_ocr_enrichment_payload(
+        record,
+        ocr_payload=payload,
+        sample_interval_seconds=sample_interval_seconds,
+        change_threshold=change_threshold,
+    )
+
+
+def apply_ocr_enrichment_payload(
+    record: LectureRecord,
+    *,
+    ocr_payload: dict[str, object],
+    sample_interval_seconds: int = DEFAULT_FRAME_SAMPLE_INTERVAL_SECONDS,
+    change_threshold: float = DEFAULT_SLIDE_CHANGE_THRESHOLD,
+) -> LectureRecord:
+    validate_enrichment_settings(sample_interval_seconds, change_threshold)
+    if not record.segments:
+        raise EnrichmentError(
+            ErrorDetail(
+                code="segments_required",
+                message="Transcript segments are required before OCR enrichment.",
+                stage="enrichment",
+                retryable=False,
+            )
+        )
+
+    payload = _validate_ocr_payload_object(ocr_payload)
     frames = _frames_from_payload(payload)
     provider_metadata = _metadata_from_payload(payload)
     slides, issues = _slides_from_frames(
@@ -120,6 +147,10 @@ def _read_ocr_payload(path_value: str | Path) -> dict[str, object]:
                 retryable=False,
             )
         ) from exc
+    return _validate_ocr_payload_object(payload)
+
+
+def _validate_ocr_payload_object(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValidationError(
             ErrorDetail(
