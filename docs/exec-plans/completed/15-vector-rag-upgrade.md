@@ -15,13 +15,13 @@
 
 ## Steps
 
-- [ ] 기존 `search_index` payload에 embedding vector와 source hash 저장 위치를 정한다.
-- [ ] OpenAI embedding 호출 client를 추가한다.
-- [ ] chunk와 approved note section의 embedding 생성/캐시 정책을 구현한다.
-- [ ] vector similarity 검색과 lexical fallback의 우선순위를 구현한다.
-- [ ] `ask` 결과에 search strategy와 score metadata를 포함한다.
-- [ ] 근거 부족 시 답변 생성을 거부하는 기존 정책을 유지한다.
-- [ ] embedding stale 상태와 수동 재생성 흐름을 추가한다.
+- [x] 기존 `search_index` payload에 embedding vector와 source hash 저장 위치를 정한다.
+- [x] OpenAI embedding 호출 client를 추가한다.
+- [x] chunk와 approved note section의 embedding 생성/캐시 정책을 구현한다.
+- [x] vector similarity 검색과 lexical fallback의 우선순위를 구현한다.
+- [x] `ask` 결과에 search strategy와 score metadata를 포함한다.
+- [x] 근거 부족 시 답변 생성을 거부하는 기존 정책을 유지한다.
+- [x] embedding stale 상태와 수동 재생성 흐름을 추가한다.
 
 ## Validation
 
@@ -37,4 +37,11 @@
 
 ## Result
 
-작성 전.
+완료.
+
+- `search_index` entry에 `source_hash`, `embedding_vector`, `embedding_status`, `embedding_metadata`를 저장하도록 정리했다.
+- OpenAI Embeddings API 호출 래퍼를 추가하고 dry-run, 실패 기록, malformed response 검증을 포함했다.
+- 외부 vector DB 없이 로컬 JSON payload에 embedding cache를 유지하며, model/source hash가 달라지면 stale로 표시한다.
+- `ask`는 query embedding이 있고 ready vector가 충분하면 vector score를 우선 사용하고, embedding 없음/stale/근거 부족이면 lexical fallback으로 내려간다.
+- 답변 결과에는 search strategy와 score metadata가 포함되며, citation은 chunk/note section/segment/timestamp 역추적 정보를 유지한다.
+- 승인된 note section만 index 대상으로 포함되며, 원본 segment id와 timestamp mapping을 보존한다.
