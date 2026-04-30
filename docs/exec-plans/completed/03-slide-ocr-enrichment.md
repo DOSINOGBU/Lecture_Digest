@@ -30,12 +30,12 @@
 
 ## Steps
 
-- [ ] 슬라이드 후보 감지 입력/출력 스키마를 정의한다.
-- [ ] 프레임 샘플링 간격과 화면 변화 threshold의 기본값을 정한다.
-- [ ] OCR payload에서 원문 OCR과 정제 OCR 필드를 분리한다.
-- [ ] OCR 결과와 transcript segment의 타임라인 연결 규칙을 정의한다.
-- [ ] Vision API 호출 metadata와 실패 상태를 정의한다.
-- [ ] OCR이 없거나 실패한 경우 노트/RAG 입력에서 제외되는 흐름을 정한다.
+- [x] 슬라이드 후보 감지 입력/출력 스키마를 정의한다.
+- [x] 프레임 샘플링 간격과 화면 변화 threshold의 기본값을 정한다.
+- [x] OCR payload에서 원문 OCR과 정제 OCR 필드를 분리한다.
+- [x] OCR 결과와 transcript segment의 타임라인 연결 규칙을 정의한다.
+- [x] Vision API 호출 metadata와 실패 상태를 정의한다.
+- [x] OCR이 없거나 실패한 경우 노트/RAG 입력에서 제외되는 흐름을 정한다.
 
 ## Validation
 
@@ -54,4 +54,4 @@
 
 ## Result
 
-진행 전입니다.
+`import-ocr` CLI와 `apply_ocr_enrichment` use case를 추가했습니다. 실제 영상 디코딩과 Vision API 호출은 범위 밖으로 두고, 외부 프레임/OCR JSON 결과를 받아 슬라이드 후보를 감지합니다. 기본 프레임 샘플링 간격은 5초, 화면 변화 threshold는 0.35입니다. `slides` payload에는 `slide_id`, `source_frame_ts`, 원문 OCR, 정제 OCR, confidence, provider metadata, frame size, change score, status를 분리 저장합니다. Transcript segment에는 같은 시간대의 정제 OCR만 `ocr_text`, `slide_id`, `source_frame_ts`로 연결합니다. OCR 실패, 빈 OCR, 1080p 미만 프레임, 매핑 실패는 `enrichment` issue로 남기며 transcript/chunk 흐름을 막지 않습니다.
