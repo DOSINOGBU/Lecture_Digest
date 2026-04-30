@@ -22,8 +22,8 @@ LectureDigest는 MVP에서 개인 로컬/개인 계정 기반 사용을 우선�
 
 | 목적 | 명령 | 비고 |
 |---|---|---|
-| 설치 | TODO | 기술 스택 확정 후 작성 |
-| 개발 서버 | TODO | UI 방식 확정 후 작성 |
+| 설치 | `python -m pip install -r requirements.txt` | Streamlit UI 실행 전 필요 |
+| 개발 서버 | `python -m streamlit run lecturedigest/streamlit_app.py` | 로컬 리뷰 UI |
 | 워커 실행 | TODO | 큐 방식 확정 후 작성 |
 | 빌드 | TODO | 배포 전 확인 |
 | 배포 | TODO | 클라우드 범위 확정 전 미정 |

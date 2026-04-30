@@ -1,13 +1,15 @@
 # Testing
 
-변경 후 무엇을 실행해야 하는지 AI가 추측하지 않도록 기록합니다. 현재 MVP는 표준 라이브러리 기반으로 구현되어 별도의 설치 과정 없이 Python 환경만으로 실행 가능합니다.
+변경 후 무엇을 실행해야 하는지 AI가 추측하지 않도록 기록합니다. 현재 MVP의 핵심 파이프라인은 표준 라이브러리 기반이며, Streamlit 리뷰 UI를 실행할 때만 `requirements.txt` 설치가 필요합니다.
 
 ## Commands
 
 | 목적 | 명령 | 비고 |
 |---|---|---|
-| 설치 | `python --version` | 별도 설치 과정 없음, Python 환경 확인 |
-| 개발 서버 | `python -m lecturedigest --help` | UI 도입 전 CLI 진입점 확인 |
+| Python 확인 | `python --version` | Python 환경 확인 |
+| UI 의존성 설치 | `python -m pip install -r requirements.txt` | Streamlit 리뷰 UI 실행 전 필요 |
+| CLI 진입점 | `python -m lecturedigest --help` | CLI 기능 확인 |
+| Streamlit UI | `python -m streamlit run lecturedigest/streamlit_app.py` | 로컬 리뷰 UI 실행 |
 | 단위 테스트 | `python -m unittest discover -s tests` | 관련 테스트 우선 실행 |
 | 린트 | `python -m compileall lecturedigest tests` | 린터 미도입, 문법/임포트 오류 대체 확인 |
 | 타입체크 | `python -m compileall lecturedigest tests` | 타입체커 미도입, 기본 정적 오류 대체 확인 |
@@ -30,7 +32,7 @@
 - 버그 수정은 재현 방법과 수정 후 확인 방법을 함께 기록합니다.
 - 테스트를 실행하지 못한 경우 이유와 대체 검증을 남깁니다.
 - MVP 초기 단계는 개발 생산성을 우선해 최소 검증 체계로 운영합니다.
-- UI는 아직 도입하지 않았으므로 Streamlit이나 웹 서버 대신 CLI 기반 진입점을 확인합니다.
+- UI 변경은 Streamlit import와 최소 수동 smoke scenario를 확인합니다.
 - lint, typecheck, build 파이프라인은 UI와 서비스 구조가 확정된 뒤 정식 도구로 교체합니다.
 - 템플릿 원본은 `-Mode Template`을 사용하고, 실제 프로젝트에 적용한 뒤에는 `-Mode Project`를 통과시킵니다.
 - `-Strict`는 기존 사용자를 위한 호환 옵션이며 `-Mode Project`와 같은 수준으로 처리합니다.
@@ -72,3 +74,4 @@ Observed:
 5. 챕터 학습 노트 생성 시 Markdown frontmatter, 원본 매핑, 검증 결과가 생성된다.
 6. 낮은 confidence 교정 후보는 자동 적용되지 않고 검수 대상으로 남는다.
 7. 모델 또는 prompt 버전이 바뀐 산출물은 stale로 표시되고 자동 재생성되지 않는다.
+8. Streamlit UI에서 빈 라이브러리, 강의 상세 상태, 노트 후보 없음, 교정 후보 없음, API 키 없음 상태가 표시된다.

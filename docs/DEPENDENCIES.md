@@ -3,6 +3,14 @@
 새 라이브러리는 코드 한 줄이지만 이후 운영에 큰 영향을 줍니다.
 AI 에이전트는 의존성을 추가하기 전에 이 문서를 확인합니다.
 
+## Current Runtime Dependencies
+
+| 패키지 | 버전 | 용도 | 결정 기록 |
+|---|---:|---|---|
+| `streamlit` | `1.57.0` | 로컬 리뷰 UI, 노트/교정/카드/퀴즈 preview | `docs/adr/0002-streamlit-review-ui.md` |
+
+현재 의존성은 `requirements.txt`에 직접 pin합니다. 별도 Python lockfile 체계는 아직 도입하지 않았으므로, 의존성 확장이 늘어나면 `requirements.lock.txt` 또는 `pyproject.toml`/lockfile 도입을 별도 ADR로 결정합니다.
+
 ## When To Add
 
 | 조건 | 통과 |
