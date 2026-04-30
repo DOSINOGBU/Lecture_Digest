@@ -15,14 +15,14 @@ CLI/use case 파이프라인이 안정화된 뒤, 사용자가 강의 처리 상
 
 ## Steps
 
-- [ ] Streamlit 도입 ADR 또는 dependency 기록을 작성한다.
-- [ ] 앱 entrypoint와 실행 명령을 추가한다.
-- [ ] lecture repository를 읽어 빈 library와 lecture list 상태를 표시한다.
-- [ ] lecture detail에서 stage, status, issues, metadata를 표시한다.
-- [ ] note candidate 3개를 Markdown으로 preview하고 승인/거절 action을 연결한다.
-- [ ] correction review queue에서 original/corrected/confidence/reason을 보여주고 승인/거절 action을 연결한다.
-- [ ] Anki card와 quiz preview 화면을 추가한다.
-- [ ] 비용 발생 action은 confirm/dry-run 중심으로 제한한다.
+- [x] Streamlit 도입 ADR 또는 dependency 기록을 작성한다.
+- [x] 앱 entrypoint와 실행 명령을 추가한다.
+- [x] lecture repository를 읽어 빈 library와 lecture list 상태를 표시한다.
+- [x] lecture detail에서 stage, status, issues, metadata를 표시한다.
+- [x] note candidate 3개를 Markdown으로 preview하고 승인/거절 action을 연결한다.
+- [x] correction review queue에서 original/corrected/confidence/reason을 보여주고 승인/거절 action을 연결한다.
+- [x] Anki card와 quiz preview 화면을 추가한다.
+- [x] 비용 발생 action은 confirm/dry-run 중심으로 제한한다.
 
 ## Validation
 
@@ -37,4 +37,12 @@ CLI/use case 파이프라인이 안정화된 뒤, 사용자가 강의 처리 상
 
 ## Result
 
-작성 전.
+완료.
+
+- Streamlit 1.57.0을 `requirements.txt`에 pin하고 ADR/의존성/테스트/배포 문서에 설치 및 실행 경로를 기록했다.
+- `lecturedigest/streamlit_app.py`를 로컬 리뷰 UI entrypoint로 추가했다.
+- UI는 빈 라이브러리, 강의 목록, 등록 폼, 강의 상태, issues, metadata, API 키 없음, cost/quota issue를 표시한다.
+- 노트 후보 Markdown preview와 승인/거절 action을 기존 note use case에 연결했다.
+- 교정 review queue 승인/거절 action을 추가하고, 원문/수정안/confidence/reason을 보존해 표시한다.
+- Anki 카드와 퀴즈 preview를 추가했다.
+- 유료 OpenAI action은 UI에서 직접 실행하지 않고 외부 전송 범위, 모델, 예상 입력 크기, dry-run 명령만 표시한다.
