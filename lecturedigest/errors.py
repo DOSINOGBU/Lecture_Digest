@@ -51,3 +51,7 @@ class AnkiExportError(LectureDigestError):
 
 class QuizGenerationError(LectureDigestError):
     pass
+
+
+class OpenAIClientError(LectureDigestError):
+    pass
