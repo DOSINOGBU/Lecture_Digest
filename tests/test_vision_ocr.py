@@ -12,6 +12,7 @@ from lecturedigest.vision_ocr import (
     parse_vision_ocr_response,
     run_vision_ocr_on_frames,
 )
+from support import FakeTransport, openai_env
 
 
 class VisionOcrTest(unittest.TestCase):
@@ -92,7 +93,7 @@ class VisionOcrTest(unittest.TestCase):
                     body=b'{"error": "rate limited"}',
                 )
             ),
-            env={"OPENAI_API_KEY": "test-key"},
+            env=openai_env(),
         )
 
         result = run_vision_ocr_on_frames([frame], client=client)
@@ -113,7 +114,7 @@ class VisionOcrTest(unittest.TestCase):
                     body=b'{"raw_ocr_text": "Raw", "refined_ocr_text": "Refined"}',
                 )
             ),
-            env={"OPENAI_API_KEY": "test-key"},
+            env=openai_env(),
         )
 
         result = run_vision_ocr_on_frames([frame], client=client)
@@ -125,16 +126,6 @@ class VisionOcrTest(unittest.TestCase):
         self.assertEqual(payload_frame["frame_width"], 1920)
         self.assertEqual(payload_frame["source_frame_ts"], "00:00:01.000")
         self.assertEqual(payload_frame["provider_metadata"]["detail"], "original")
-
-
-class FakeTransport:
-    def __init__(self, response: OpenAITransportResponse) -> None:
-        self.response = response
-        self.calls = []
-
-    def send(self, **kwargs):
-        self.calls.append(kwargs)
-        return self.response
 
 
 def _frame(root: Path) -> FrameCandidate:

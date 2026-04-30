@@ -2,14 +2,15 @@ import unittest
 from dataclasses import replace
 
 from lecturedigest.errors import IndexingError, ValidationError
-from lecturedigest.models import LectureRecord, TranscriptChunk, TranscriptSegment
+from lecturedigest.models import TranscriptChunk
 from lecturedigest.rag import answer_question, build_search_index, generate_summaries
 from lecturedigest.rag_vector import attach_embedding
+from support import chunked_lecture, lecture_record, segment
 
 
 class RagTest(unittest.TestCase):
     def test_builds_index_payload_with_cache_key_and_mapping(self):
-        record = _chunked_lecture()
+        record = chunked_lecture()
 
         indexed = build_search_index(record)
 
@@ -28,7 +29,7 @@ class RagTest(unittest.TestCase):
         self.assertEqual(entry["embedding_status"], "pending_external_embedding")
 
     def test_generates_l1_l2_l3_summaries_with_citations(self):
-        record = _chunked_lecture()
+        record = chunked_lecture()
 
         summarized = generate_summaries(record)
 
@@ -40,7 +41,7 @@ class RagTest(unittest.TestCase):
         self.assertIn("[Intro - chapter-a - 00:00]", summarized.summaries["l1"][0]["citation"])
 
     def test_answers_with_citations_and_jump_links(self):
-        record = build_search_index(_chunked_lecture())
+        record = build_search_index(chunked_lecture())
 
         answer = answer_question(record, question="React DOM")
 
@@ -52,7 +53,7 @@ class RagTest(unittest.TestCase):
         self.assertTrue(answer.citations[0].jump_link.startswith("lecturedigest://"))
 
     def test_refuses_answer_when_evidence_is_insufficient(self):
-        record = build_search_index(_chunked_lecture())
+        record = build_search_index(chunked_lecture())
 
         answer = answer_question(record, question="database transaction")
 
@@ -88,7 +89,7 @@ class RagTest(unittest.TestCase):
         self.assertEqual(answer.citations[0].chunk_id, "chunk-000002")
 
     def test_stale_embedding_uses_lexical_fallback(self):
-        indexed = build_search_index(_chunked_lecture())
+        indexed = build_search_index(chunked_lecture())
         stale_entry = {
             **indexed.search_index[0],
             "embedding_status": "stale",
@@ -107,7 +108,7 @@ class RagTest(unittest.TestCase):
 
     def test_indexes_note_sections_with_original_segment_mapping(self):
         record = replace(
-            _chunked_lecture(),
+            chunked_lecture(),
             approved_note={"status": "approved"},
             note_sections=[
                 {
@@ -133,12 +134,12 @@ class RagTest(unittest.TestCase):
 
     def test_requires_chunks_before_indexing(self):
         with self.assertRaises(IndexingError) as context:
-            build_search_index(_lecture([]))
+            build_search_index(lecture_record([]))
 
         self.assertEqual(context.exception.detail.code, "chunks_required")
 
     def test_rejects_empty_question(self):
-        record = build_search_index(_chunked_lecture())
+        record = build_search_index(chunked_lecture())
 
         with self.assertRaises(ValidationError) as context:
             answer_question(record, question=" ")
@@ -146,31 +147,7 @@ class RagTest(unittest.TestCase):
         self.assertEqual(context.exception.detail.code, "question_required")
 
 
-def _chunked_lecture() -> LectureRecord:
-    chunk = TranscriptChunk(
-        chunk_id="chunk-000001",
-        lecture_id="lec_1",
-        chapter="chapter-a",
-        start_ts="00:00:00.000",
-        end_ts="00:00:20.000",
-        text="React renders components",
-        segment_ids=["seg-1", "seg-2"],
-        ocr_text="React DOM",
-    )
-    return replace(
-        _lecture(
-            [
-                _segment("seg-1", "00:00:00.000", "00:00:10.000", "React renders"),
-                _segment("seg-2", "00:00:10.000", "00:00:20.000", "components"),
-            ]
-        ),
-        status="chunks_ready",
-        stage="chunking",
-        chunks=[chunk],
-    )
-
-
-def _two_chunk_lecture() -> LectureRecord:
+def _two_chunk_lecture():
     first = TranscriptChunk(
         chunk_id="chunk-000001",
         lecture_id="lec_1",
@@ -190,46 +167,16 @@ def _two_chunk_lecture() -> LectureRecord:
         segment_ids=["seg-2"],
     )
     return replace(
-        _lecture(
+        lecture_record(
             [
-                _segment("seg-1", "00:00:00.000", "00:00:10.000", first.text),
-                _segment("seg-2", "00:00:10.000", "00:00:20.000", second.text),
+                segment("seg-1", "00:00:00.000", "00:00:10.000", first.text),
+                segment("seg-2", "00:00:10.000", "00:00:20.000", second.text),
             ]
         ),
         status="chunks_ready",
         stage="chunking",
         chunks=[first, second],
     )
-
-
-def _lecture(segments: list[TranscriptSegment]) -> LectureRecord:
-    return LectureRecord(
-        lecture_id="lec_1",
-        title="Intro",
-        instructor="Teacher",
-        category="Coding",
-        source_path="lecture.mp4",
-        subtitle_path="lecture.srt",
-        status="transcript_ready",
-        stage="transcription",
-        transcript_source="subtitle",
-        segments=segments,
-    )
-
-
-def _segment(
-    segment_id: str,
-    start_ts: str,
-    end_ts: str,
-    text: str,
-) -> TranscriptSegment:
-    return TranscriptSegment(
-        segment_id=segment_id,
-        start_ts=start_ts,
-        end_ts=end_ts,
-        text=text,
-    )
-
 
 if __name__ == "__main__":
     unittest.main()

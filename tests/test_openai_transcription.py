@@ -1,5 +1,4 @@
-import json
-import tempfile
+﻿import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from lecturedigest.openai_transcription import (
     validate_transcription_preflight,
 )
 from lecturedigest.openai_types import OpenAITransportResponse
+from support import FakeTransport, json_response, openai_env, stt_success_response
 
 
 class OpenAITranscriptionTest(unittest.TestCase):
@@ -26,7 +26,7 @@ class OpenAITranscriptionTest(unittest.TestCase):
     def test_dry_run_builds_request_without_api_key_or_transport_call(self):
         video = _video(self.root)
         record = _record(video)
-        transport = FakeTransport(_openai_success_response())
+        transport = FakeTransport(stt_success_response())
         client = OpenAIClient(transport=transport, env={})
 
         result = transcribe_lecture_with_openai(
@@ -43,8 +43,8 @@ class OpenAITranscriptionTest(unittest.TestCase):
     def test_fake_diarized_response_stores_transcript_segments(self):
         record = _record(_video(self.root))
         client = OpenAIClient(
-            transport=FakeTransport(_openai_success_response()),
-            env=_env(),
+            transport=FakeTransport(stt_success_response()),
+            env=openai_env(),
         )
 
         result = transcribe_lecture_with_openai(record, client=client)
@@ -69,7 +69,7 @@ class OpenAITranscriptionTest(unittest.TestCase):
         record = _record(_video(self.root))
         client = OpenAIClient(
             transport=FakeTransport(
-                _json_response(
+                json_response(
                     {
                         "segments": [
                             {
@@ -82,7 +82,7 @@ class OpenAITranscriptionTest(unittest.TestCase):
                     }
                 )
             ),
-            env=_env(),
+            env=openai_env(),
         )
 
         result = transcribe_lecture_with_openai(record, client=client)
@@ -98,7 +98,7 @@ class OpenAITranscriptionTest(unittest.TestCase):
                     body=b'{"error": "rate limited"}',
                 )
             ),
-            env=_env(),
+            env=openai_env(),
         )
 
         result = transcribe_lecture_with_openai(record, client=client)
@@ -111,7 +111,7 @@ class OpenAITranscriptionTest(unittest.TestCase):
     def test_rejects_missing_api_key_before_upload(self):
         record = _record(_video(self.root))
         client = OpenAIClient(
-            transport=FakeTransport(_openai_success_response()),
+            transport=FakeTransport(stt_success_response()),
             env={},
         )
 
@@ -180,11 +180,11 @@ class OpenAITranscriptionTest(unittest.TestCase):
         record = _record(_video(self.root))
         client = OpenAIClient(
             transport=FakeTransport(
-                _json_response(
+                json_response(
                     {"segments": [{"start": 1, "end": 2, "text": "hello"}]}
                 )
             ),
-            env=_env(),
+            env=openai_env(),
         )
 
         with self.assertRaises(TranscriptionError) as context:
@@ -198,7 +198,7 @@ class OpenAITranscriptionTest(unittest.TestCase):
             transport=FakeTransport(
                 OpenAITransportResponse(status_code=200, body=b"not-json")
             ),
-            env=_env(),
+            env=openai_env(),
         )
 
         with self.assertRaises(TranscriptionError) as context:
@@ -219,16 +219,6 @@ class OpenAITranscriptionTest(unittest.TestCase):
         self.assertIn(b"diarized_json", request.body)
         self.assertIn(b'name="chunking_strategy"', request.body)
         self.assertIn(b"auto", request.body)
-
-
-class FakeTransport:
-    def __init__(self, response: OpenAITransportResponse) -> None:
-        self.response = response
-        self.calls = []
-
-    def send(self, **kwargs):
-        self.calls.append(kwargs)
-        return self.response
 
 
 def _record(video: Path):
@@ -259,32 +249,6 @@ def _video(root: Path, name: str = "lecture.mp4") -> Path:
     video = root / name
     video.write_bytes(b"fake video")
     return video
-
-
-def _openai_success_response() -> OpenAITransportResponse:
-    return _json_response(
-        {
-            "segments": [
-                {
-                    "start": 1.0,
-                    "end": 2.5,
-                    "text": "hello",
-                    "speaker": "speaker_1",
-                }
-            ]
-        }
-    )
-
-
-def _json_response(payload: dict[str, object]) -> OpenAITransportResponse:
-    return OpenAITransportResponse(
-        status_code=200,
-        body=json.dumps(payload).encode("utf-8"),
-    )
-
-
-def _env() -> dict[str, str]:
-    return {"OPENAI_API_KEY": "test-openai-key"}
 
 
 if __name__ == "__main__":

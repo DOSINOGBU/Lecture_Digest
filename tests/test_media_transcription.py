@@ -14,6 +14,7 @@ from lecturedigest.media_transcription import (
 from lecturedigest.openai_client import OpenAIClient
 from lecturedigest.openai_transcription import MAX_TRANSCRIPTION_UPLOAD_BYTES
 from lecturedigest.openai_types import OpenAITransportResponse
+from support import FakeTransport, openai_env, stt_success_response
 
 
 class MediaTranscriptionTest(unittest.TestCase):
@@ -26,8 +27,8 @@ class MediaTranscriptionTest(unittest.TestCase):
 
     def test_dry_run_returns_preflight_and_split_plan_without_api_call(self):
         record = _record(_large_video(self.root))
-        transport = FakeTransport()
-        client = OpenAIClient(transport=transport, env=_env())
+        transport = FakeTransport(stt_success_response())
+        client = OpenAIClient(transport=transport, env=openai_env())
         runner = FakeMediaRunner()
 
         result = transcribe_large_lecture_with_openai(
@@ -49,8 +50,8 @@ class MediaTranscriptionTest(unittest.TestCase):
 
     def test_split_transcription_merges_segments_on_original_timeline(self):
         record = _record(_large_video(self.root))
-        transport = FakeTransport()
-        client = OpenAIClient(transport=transport, env=_env())
+        transport = FakeTransport(stt_success_response())
+        client = OpenAIClient(transport=transport, env=openai_env())
         runner = FakeMediaRunner()
 
         result = transcribe_large_lecture_with_openai(
@@ -71,7 +72,10 @@ class MediaTranscriptionTest(unittest.TestCase):
 
     def test_temp_paths_are_not_persisted_in_transcript_metadata(self):
         record = _record(_large_video(self.root))
-        client = OpenAIClient(transport=FakeTransport(), env=_env())
+        client = OpenAIClient(
+            transport=FakeTransport(stt_success_response()),
+            env=openai_env(),
+        )
 
         result = transcribe_large_lecture_with_openai(
             record,
@@ -95,7 +99,7 @@ class MediaTranscriptionTest(unittest.TestCase):
                     body=b'{"error": "rate limited"}',
                 )
             ),
-            env=_env(),
+            env=openai_env(),
         )
 
         result = transcribe_large_lecture_with_openai(
@@ -112,7 +116,10 @@ class MediaTranscriptionTest(unittest.TestCase):
 
     def test_temp_cleanup_failure_is_recorded_as_warning_issue(self):
         record = _record(_large_video(self.root))
-        client = OpenAIClient(transport=FakeTransport(), env=_env())
+        client = OpenAIClient(
+            transport=FakeTransport(stt_success_response()),
+            env=openai_env(),
+        )
 
         with mock.patch(
             "lecturedigest.media_transcription.shutil.rmtree",
@@ -150,16 +157,6 @@ class FakeMediaRunner:
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
 
-class FakeTransport:
-    def __init__(self, response: OpenAITransportResponse | None = None) -> None:
-        self.response = response or _openai_success_response()
-        self.calls = []
-
-    def send(self, **kwargs):
-        self.calls.append(kwargs)
-        return self.response
-
-
 def _record(video: Path):
     return register_lecture(
         video_path=video,
@@ -178,28 +175,6 @@ def _large_video(root: Path) -> Path:
 
 def _tools() -> MediaToolPaths:
     return MediaToolPaths(ffmpeg_path="ffmpeg", ffprobe_path="ffprobe")
-
-
-def _env() -> dict[str, str]:
-    return {"OPENAI_API_KEY": "test-openai-key"}
-
-
-def _openai_success_response() -> OpenAITransportResponse:
-    return OpenAITransportResponse(
-        status_code=200,
-        body=json.dumps(
-            {
-                "segments": [
-                    {
-                        "start": 1.0,
-                        "end": 2.5,
-                        "text": "hello",
-                        "speaker": "speaker_1",
-                    }
-                ]
-            }
-        ).encode("utf-8"),
-    )
 
 
 def _ffprobe_payload() -> dict[str, object]:

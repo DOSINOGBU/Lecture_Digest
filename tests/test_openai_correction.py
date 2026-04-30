@@ -13,6 +13,7 @@ from lecturedigest.openai_correction import (
     parse_correction_response,
 )
 from lecturedigest.openai_types import OpenAITransportResponse
+from support import FakeTransport, json_response, openai_client
 
 
 class OpenAICorrectionTest(unittest.TestCase):
@@ -86,11 +87,11 @@ class OpenAICorrectionTest(unittest.TestCase):
 
         subtitle_result = correct_transcript_with_openai(
             subtitle_record,
-            client=_client(_success_response("hello")),
+            client=openai_client(_success_response("hello")),
         )
         stt_result = correct_transcript_with_openai(
             stt_record,
-            client=_client(_success_response("hello")),
+            client=openai_client(_success_response("hello")),
         )
 
         self.assertEqual(subtitle_result.record.segments[0].text, "hello")
@@ -100,7 +101,7 @@ class OpenAICorrectionTest(unittest.TestCase):
 
     def test_openai_failure_records_failed_corrections(self):
         record = _lecture_with_subtitle(self.root, "helo")
-        client = _client(
+        client = openai_client(
             OpenAITransportResponse(
                 status_code=429,
                 body=b'{"error": "rate limited"}',
@@ -130,38 +131,18 @@ class OpenAICorrectionTest(unittest.TestCase):
         self.assertEqual(client.transport.calls, [])
 
 
-class FakeTransport:
-    def __init__(self, response: OpenAITransportResponse) -> None:
-        self.response = response
-        self.calls = []
-
-    def send(self, **kwargs):
-        self.calls.append(kwargs)
-        return self.response
-
-
-def _client(response: OpenAITransportResponse) -> OpenAIClient:
-    return OpenAIClient(
-        transport=FakeTransport(response),
-        env={"OPENAI_API_KEY": "test-key"},
-    )
-
-
 def _success_response(corrected_text: str) -> OpenAITransportResponse:
-    return OpenAITransportResponse(
-        status_code=200,
-        body=json.dumps(
-            {
-                "corrections": [
-                    {
-                        "segment_id": "seg-000001",
-                        "corrected_text": corrected_text,
-                        "confidence": 0.96,
-                        "reason": "typo",
-                    }
-                ]
-            }
-        ).encode("utf-8"),
+    return json_response(
+        {
+            "corrections": [
+                {
+                    "segment_id": "seg-000001",
+                    "corrected_text": corrected_text,
+                    "confidence": 0.96,
+                    "reason": "typo",
+                }
+            ]
+        }
     )
 
 

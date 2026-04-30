@@ -12,6 +12,7 @@ from lecturedigest.openai_client import (
     load_openai_api_key,
     redact_sensitive,
 )
+from support import FakeTransport, TimeoutTransport, openai_env
 
 
 class OpenAIClientTest(unittest.TestCase):
@@ -47,7 +48,7 @@ class OpenAIClientTest(unittest.TestCase):
                 body=b'{"ok": true}',
             )
         )
-        client = OpenAIClient(transport=transport, env=_env())
+        client = OpenAIClient(transport=transport, env=openai_env())
 
         result = client.send(_request())
 
@@ -77,7 +78,7 @@ class OpenAIClientTest(unittest.TestCase):
                     body=b'{"error": "rate limited"}',
                 )
             ),
-            env=_env(),
+            env=openai_env(),
         )
 
         result = client.send(_request())
@@ -94,7 +95,7 @@ class OpenAIClientTest(unittest.TestCase):
     def test_fake_500_response_becomes_retryable_issue(self):
         client = OpenAIClient(
             transport=FakeTransport(OpenAITransportResponse(status_code=500)),
-            env=_env(),
+            env=openai_env(),
         )
 
         result = client.send(_request())
@@ -105,7 +106,7 @@ class OpenAIClientTest(unittest.TestCase):
     def test_timeout_becomes_retryable_failure_without_raising(self):
         client = OpenAIClient(
             transport=TimeoutTransport(),
-            env=_env(),
+            env=openai_env(),
         )
 
         result = client.send(_request())
@@ -139,7 +140,7 @@ class OpenAIClientTest(unittest.TestCase):
             "nested": [{"api_key": "test-openai-key"}],
         }
 
-        redacted = redact_sensitive(payload, env=_env())
+        redacted = redact_sensitive(payload, env=openai_env())
 
         self.assertEqual(redacted["Authorization"], "[REDACTED]")
         self.assertNotIn("test-openai-key", str(redacted))
@@ -157,21 +158,6 @@ class OpenAIClientTest(unittest.TestCase):
         self.assertEqual(error_code_for_status(400), "openai_client_error")
 
 
-class FakeTransport:
-    def __init__(self, response: OpenAITransportResponse) -> None:
-        self.response = response
-        self.calls = []
-
-    def send(self, **kwargs):
-        self.calls.append(kwargs)
-        return self.response
-
-
-class TimeoutTransport:
-    def send(self, **kwargs):
-        raise TimeoutError("network timeout")
-
-
 def _request() -> OpenAIRequest:
     return OpenAIRequest(
         endpoint="/v1/responses",
@@ -182,11 +168,6 @@ def _request() -> OpenAIRequest:
         input_size_bytes=15,
         external_data_boundary="text-only",
     )
-
-
-def _env() -> dict[str, str]:
-    return {"OPENAI_API_KEY": "test-openai-key"}
-
 
 if __name__ == "__main__":
     unittest.main()
