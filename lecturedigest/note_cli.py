@@ -11,6 +11,12 @@ from lecturedigest.note_generation import (
     generate_note_candidates,
     reject_note_candidate,
 )
+from lecturedigest.openai_notes import (
+    DEFAULT_OPENAI_NOTE_MODEL,
+    DEFAULT_OPENAI_NOTE_PROMPT_VERSION,
+    format_openai_note_dry_run,
+    generate_note_candidates_with_openai,
+)
 from lecturedigest.storage import JsonLectureRepository
 
 
@@ -22,17 +28,33 @@ def generate_notes_command(
     if record is None:
         return 0
 
+    model = _note_model(args)
+    prompt_version = _prompt_version(args)
+    provider = "openai" if args.openai else "local"
     print(
         "[LectureNotes] generate-notes start "
-        f"{{ lectureId={args.lecture_id}; tone={args.tone}; "
-        f"model={args.note_model}; promptVersion={args.prompt_version} }}"
+        f"{{ lectureId={args.lecture_id}; provider={provider}; tone={args.tone}; "
+        f"model={model}; promptVersion={prompt_version}; dryRun={args.dry_run} }}"
     )
-    updated = generate_note_candidates(
-        record,
-        tone=args.tone,
-        model=args.note_model,
-        prompt_version=args.prompt_version,
-    )
+    if args.openai:
+        result = generate_note_candidates_with_openai(
+            record,
+            tone=args.tone,
+            model=model,
+            prompt_version=prompt_version,
+            dry_run=args.dry_run,
+        )
+        if args.dry_run:
+            print(format_openai_note_dry_run(result))
+            return 0
+        updated = result.record
+    else:
+        updated = generate_note_candidates(
+            record,
+            tone=args.tone,
+            model=model,
+            prompt_version=prompt_version,
+        )
     repository.save(updated)
     print(format_note_generation_result(updated))
     return 0
@@ -91,6 +113,8 @@ def add_note_parsers(subparsers: argparse._SubParsersAction) -> None:
         "--prompt-version",
         default=DEFAULT_NOTE_PROMPT_VERSION,
     )
+    generate_parser.add_argument("--openai", action="store_true")
+    generate_parser.add_argument("--dry-run", action="store_true")
 
     approve_parser = subparsers.add_parser("approve-note")
     approve_parser.add_argument("--lecture-id", required=True)
@@ -155,6 +179,18 @@ def _validation_status(candidate: dict[str, object]) -> str:
     if not isinstance(validation, dict):
         return "unknown"
     return str(validation.get("status", "unknown"))
+
+
+def _note_model(args: argparse.Namespace) -> str:
+    if args.openai and args.note_model == DEFAULT_NOTE_MODEL:
+        return DEFAULT_OPENAI_NOTE_MODEL
+    return args.note_model
+
+
+def _prompt_version(args: argparse.Namespace) -> str:
+    if args.openai and args.prompt_version == DEFAULT_NOTE_PROMPT_VERSION:
+        return DEFAULT_OPENAI_NOTE_PROMPT_VERSION
+    return args.prompt_version
 
 
 def _load_record(

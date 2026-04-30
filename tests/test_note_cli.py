@@ -88,6 +88,30 @@ class NoteCliTest(unittest.TestCase):
         self.assertEqual(payload[0]["status"], "note_approved")
         self.assertEqual(len(payload[0]["note_sections"]), 4)
 
+    def test_generate_notes_openai_dry_run_does_not_save_candidates(self):
+        lecture_id = _register_lecture(self.store, self.root)
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "generate-notes",
+                    "--lecture-id",
+                    lecture_id,
+                    "--openai",
+                    "--dry-run",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("provider=openai", output)
+        self.assertIn("openai dry-run", output)
+        payload = json.loads(self.store.read_text(encoding="utf-8"))
+        self.assertEqual(payload[0]["note_candidates"], [])
+
     def test_approve_note_outputs_error_for_missing_candidate(self):
         lecture_id = _register_lecture(self.store, self.root)
         stdout = io.StringIO()
