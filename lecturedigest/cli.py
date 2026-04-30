@@ -4,6 +4,11 @@ import argparse
 import sys
 from pathlib import Path
 
+from lecturedigest.anki_cli import (
+    add_anki_parsers,
+    export_anki_command,
+    generate_cards_command,
+)
 from lecturedigest.chunking import chunk_lecture
 from lecturedigest.enrichment import (
     DEFAULT_FRAME_SAMPLE_INTERVAL_SECONDS,
@@ -65,6 +70,10 @@ def main(argv: list[str] | None = None) -> int:
             return approve_note_command(args, repository)
         if args.command == "reject-note":
             return reject_note_command(args, repository)
+        if args.command == "generate-cards":
+            return generate_cards_command(args, repository)
+        if args.command == "export-anki":
+            return export_anki_command(args, repository)
     except LectureDigestError as exc:
         _print_error(exc)
         return 1
@@ -129,6 +138,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     add_rag_parsers(subparsers)
     add_note_parsers(subparsers)
+    add_anki_parsers(subparsers)
 
     subparsers.add_parser("list")
     return parser

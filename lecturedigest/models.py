@@ -108,6 +108,9 @@ class LectureRecord:
     note_candidates: list[dict[str, object]] = field(default_factory=list)
     approved_note: dict[str, object] = field(default_factory=dict)
     note_metadata: dict[str, object] = field(default_factory=dict)
+    flashcards: list[dict[str, object]] = field(default_factory=list)
+    anki_exports: list[dict[str, object]] = field(default_factory=list)
+    card_metadata: dict[str, object] = field(default_factory=dict)
     created_at: str | None = None
     input_mode: str = "file"
     lecture_title: str | None = None
@@ -140,6 +143,9 @@ class LectureRecord:
             "note_candidates": self.note_candidates,
             "approved_note": self.approved_note,
             "note_metadata": self.note_metadata,
+            "flashcards": self.flashcards,
+            "anki_exports": self.anki_exports,
+            "card_metadata": self.card_metadata,
             "created_at": self.created_at,
             "input_mode": self.input_mode,
             "lecture_title": self.lecture_title,
@@ -178,6 +184,9 @@ class LectureRecord:
             note_candidates=_as_dict_list(payload.get("note_candidates", [])),
             approved_note=_as_metadata(payload.get("approved_note", {})),
             note_metadata=_as_metadata(payload.get("note_metadata", {})),
+            flashcards=_as_dict_list(payload.get("flashcards", [])),
+            anki_exports=_as_dict_list(payload.get("anki_exports", [])),
+            card_metadata=_as_metadata(payload.get("card_metadata", {})),
             created_at=(
                 str(payload["created_at"])
                 if payload.get("created_at") is not None

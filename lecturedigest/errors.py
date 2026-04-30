@@ -43,3 +43,7 @@ class CorrectionError(LectureDigestError):
 
 class NoteGenerationError(LectureDigestError):
     pass
+
+
+class AnkiExportError(LectureDigestError):
+    pass
