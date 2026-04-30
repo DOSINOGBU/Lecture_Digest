@@ -2,7 +2,7 @@
 
 ## 상태
 
-진행 예정
+완료
 
 ## 목표
 
@@ -90,3 +90,18 @@
 
 - 문단마다 citation을 유지할지, 섹션/소주제 단위 citation으로 읽기 편하게 완화할지 결정이 필요하다.
 - 기준 노트의 문체를 모든 강의에 고정할지, 강의 분야별로 tone/profile을 나눌지 후속 검토가 필요하다.
+
+## 결과
+
+구현 완료.
+
+- 노트 본문 밀도 validator를 추가했다.
+- `body_too_short`, `topic_body_too_shallow`, `insufficient_subsections`, `missing_explanatory_depth`, `coverage_too_sparse`를 validation 결과에 포함했다.
+- OpenAI 노트 prompt를 `openai-markdown-note-prd-v3`로 올리고 교재형 본문, H3 하위 섹션, topic별 설명 깊이 요구사항을 추가했다.
+- OpenAI 노트 기본 모델을 `gpt-4.1`로 올렸다.
+- 긴 본문 생성용으로 `generate-notes --openai-timeout-seconds` 옵션을 추가했다.
+- repair prompt가 body depth gap을 보고 부족한 글자 수와 topic 평균 길이를 보강하도록 조정했다.
+- 실제 강의 `lec_3f51e7be057c`를 `gpt-4.1`로 재생성했고, 후보 3개 모두 `review_required` 상태가 됐다.
+- preview 파일은 `.lecturedigest/note-previews/18b-gpt41/`에 생성했다. 이 경로는 저장소에 포함하지 않는다.
+- validation report는 `docs/validation/note-body-depth-alignment-2026-04-30.md`에 기록했다.
+- 골든 노트 승인은 아직 사용자가 직접 결정해야 한다.
