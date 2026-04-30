@@ -47,6 +47,27 @@ class SlideOcrResult:
 
 
 @dataclass(frozen=True)
+class CorrectionLogEntry:
+    segment_id: str
+    start_ts: str
+    end_ts: str
+    original_text: str
+    corrected_text: str
+    confidence: float | None = None
+    reason: str | None = None
+    applied: bool = False
+    status: str = "review_required"
+    provider_metadata: dict[str, object] = field(default_factory=dict)
+    protected_terms: list[str] = field(default_factory=list)
+    original_error: str | None = None
+    retryable: bool = False
+    source: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class TranscriptChunk:
     chunk_id: str
     lecture_id: str
@@ -77,6 +98,9 @@ class LectureRecord:
     chunks: list[TranscriptChunk] = field(default_factory=list)
     issues: list[ProcessingIssue] = field(default_factory=list)
     slides: list[SlideOcrResult] = field(default_factory=list)
+    correction_log: list[CorrectionLogEntry] = field(default_factory=list)
+    transcript_metadata: dict[str, object] = field(default_factory=dict)
+    correction_metadata: dict[str, object] = field(default_factory=dict)
     created_at: str | None = None
     input_mode: str = "file"
     lecture_title: str | None = None
@@ -99,6 +123,9 @@ class LectureRecord:
             "chunks": [chunk.to_dict() for chunk in self.chunks],
             "issues": [issue.to_dict() for issue in self.issues],
             "slides": [slide.to_dict() for slide in self.slides],
+            "correction_log": [entry.to_dict() for entry in self.correction_log],
+            "transcript_metadata": self.transcript_metadata,
+            "correction_metadata": self.correction_metadata,
             "created_at": self.created_at,
             "input_mode": self.input_mode,
             "lecture_title": self.lecture_title,
@@ -191,6 +218,34 @@ class LectureRecord:
                 )
                 for slide in _as_dict_list(payload.get("slides", []))
             ],
+            correction_log=[
+                CorrectionLogEntry(
+                    segment_id=str(entry["segment_id"]),
+                    start_ts=str(entry["start_ts"]),
+                    end_ts=str(entry["end_ts"]),
+                    original_text=str(entry.get("original_text", "")),
+                    corrected_text=str(entry.get("corrected_text", "")),
+                    confidence=_optional_float(entry.get("confidence")),
+                    reason=_optional_string(entry.get("reason")),
+                    applied=bool(entry.get("applied", False)),
+                    status=str(entry.get("status", "review_required")),
+                    provider_metadata=_as_metadata(
+                        entry.get("provider_metadata", {})
+                    ),
+                    protected_terms=[
+                        str(term)
+                        for term in _as_string_list(
+                            entry.get("protected_terms", [])
+                        )
+                    ],
+                    original_error=_optional_string(entry.get("original_error")),
+                    retryable=bool(entry.get("retryable", False)),
+                    source=_optional_string(entry.get("source")),
+                )
+                for entry in _as_dict_list(payload.get("correction_log", []))
+            ],
+            transcript_metadata=_as_metadata(payload.get("transcript_metadata", {})),
+            correction_metadata=_as_metadata(payload.get("correction_metadata", {})),
             created_at=(
                 str(payload["created_at"])
                 if payload.get("created_at") is not None

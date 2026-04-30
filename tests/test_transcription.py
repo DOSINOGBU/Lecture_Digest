@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from lecturedigest.errors import TranscriptionError, ValidationError
@@ -53,6 +54,51 @@ class TranscriptionTest(unittest.TestCase):
                 apply_stt_result(record, stt_result_path=stt_result)
 
             self.assertEqual(context.exception.detail.code, "stt_result_empty")
+
+    def test_applies_diarized_json_stt_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video = root / "lecture.mp4"
+            stt_result = root / "stt.json"
+            video.write_bytes(b"fake video")
+            stt_result.write_text(
+                json.dumps(
+                    {
+                        "provider_metadata": {
+                            "provider": "openai_transcriptions",
+                            "model": "gpt-4o-transcribe-diarize",
+                            "response_format": "diarized_json",
+                            "duration_ms": 1200,
+                        },
+                        "segments": [
+                            {
+                                "start": 1.25,
+                                "end": 2.5,
+                                "text": "hello",
+                                "speaker": "speaker_1",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            record = register_lecture(
+                video_path=video,
+                title="Intro",
+                instructor="Teacher",
+                category="Coding",
+            )
+
+            updated = apply_stt_result(record, stt_result_path=stt_result)
+
+            self.assertEqual(updated.status, "transcript_ready")
+            self.assertEqual(updated.segments[0].start_ts, "00:00:01.250")
+            self.assertEqual(updated.segments[0].end_ts, "00:00:02.500")
+            self.assertEqual(updated.segments[0].speaker, "speaker_1")
+            self.assertEqual(
+                updated.transcript_metadata["response_format"],
+                "diarized_json",
+            )
 
     def test_rejects_invalid_stt_timestamp_range(self):
         with tempfile.TemporaryDirectory() as tmp:

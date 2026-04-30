@@ -35,3 +35,7 @@ class IndexingError(LectureDigestError):
 
 class EnrichmentError(LectureDigestError):
     pass
+
+
+class CorrectionError(LectureDigestError):
+    pass

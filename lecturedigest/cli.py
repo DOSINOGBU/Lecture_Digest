@@ -16,6 +16,7 @@ from lecturedigest.ingestion import register_lecture
 from lecturedigest.models import LectureRecord
 from lecturedigest.storage import JsonLectureRepository
 from lecturedigest.transcription import apply_stt_result
+from lecturedigest.transcript_cli import finalize_transcript_command
 
 DEFAULT_STORE = Path(".lecturedigest") / "lectures.json"
 
@@ -36,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
             return _import_stt(args, repository)
         if args.command == "import-ocr":
             return _import_ocr(args, repository)
+        if args.command == "finalize-transcript":
+            return finalize_transcript_command(args, repository)
         if args.command == "chunk":
             return _chunk(args, repository)
     except LectureDigestError as exc:
@@ -89,6 +92,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--change-threshold",
         type=float,
         default=DEFAULT_SLIDE_CHANGE_THRESHOLD,
+    )
+
+    finalize_parser = subparsers.add_parser("finalize-transcript")
+    finalize_parser.add_argument("--lecture-id", required=True)
+    finalize_parser.add_argument("--correction-result", required=True, type=Path)
+    finalize_parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=0.9,
     )
 
     subparsers.add_parser("list")
