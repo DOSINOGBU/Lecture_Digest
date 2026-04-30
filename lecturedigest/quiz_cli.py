@@ -3,6 +3,13 @@ from __future__ import annotations
 import argparse
 
 from lecturedigest.errors import ErrorDetail, ValidationError
+from lecturedigest.openai_quizzes import (
+    DEFAULT_OPENAI_QUIZ_MODEL,
+    DEFAULT_OPENAI_QUIZ_PROMPT_VERSION,
+    DEFAULT_QUIZ_BATCH_SIZE_SECTIONS,
+    format_openai_quiz_dry_run,
+    generate_quizzes_with_openai,
+)
 from lecturedigest.quiz_generation import (
     DEFAULT_QUIZ_COUNT,
     DEFAULT_QUIZ_MODEL,
@@ -25,16 +32,45 @@ def generate_quizzes_command(
         "[LectureQuiz] generate-quizzes start "
         f"{{ lectureId={args.lecture_id}; quizCount={args.quiz_count}; "
         f"seed={args.seed}; questionTypes={','.join(_question_types(args))}; "
-        f"quizModel={args.quiz_model}; promptVersion={args.prompt_version} }}"
+        f"openai={args.openai}; quizModel={_quiz_model(args)}; "
+        f"promptVersion={_prompt_version(args)} }}"
     )
+    if args.openai:
+        result = generate_quizzes_with_openai(
+            record,
+            quiz_count=args.quiz_count,
+            seed=args.seed,
+            question_types=args.question_type,
+            quiz_model=_quiz_model(args),
+            prompt_version=_prompt_version(args),
+            dry_run=args.dry_run,
+            resume=args.resume,
+            time_budget_seconds=args.time_budget_seconds,
+            batch_size_sections=args.batch_size_sections,
+            checkpoint=repository.save,
+        )
+        if result.dry_run:
+            print(format_openai_quiz_dry_run(result))
+            return 0
+        repository.save(result.record)
+        print(format_quiz_generation_result(result.record))
+        return 0
+
     updated = generate_quizzes(
         record,
         quiz_count=args.quiz_count,
         seed=args.seed,
         question_types=args.question_type,
-        quiz_model=args.quiz_model,
-        prompt_version=args.prompt_version,
+        quiz_model=_quiz_model(args),
+        prompt_version=_prompt_version(args),
     )
+    if args.dry_run:
+        print(
+            "[LectureQuiz] local dry-run "
+            "{ externalDataBoundary=none; willUpload=false; willSave=false }"
+        )
+        print(format_quiz_generation_result(updated))
+        return 0
     repository.save(updated)
     print(format_quiz_generation_result(updated))
     return 0
@@ -51,10 +87,19 @@ def add_quiz_parsers(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         choices=["multiple_choice", "mcq", "written", "short_answer"],
     )
-    generate_parser.add_argument("--quiz-model", default=DEFAULT_QUIZ_MODEL)
+    generate_parser.add_argument("--quiz-model", default=None)
     generate_parser.add_argument(
         "--prompt-version",
-        default=DEFAULT_QUIZ_PROMPT_VERSION,
+        default=None,
+    )
+    generate_parser.add_argument("--openai", action="store_true")
+    generate_parser.add_argument("--dry-run", action="store_true")
+    generate_parser.add_argument("--resume", action="store_true")
+    generate_parser.add_argument("--time-budget-seconds", type=float)
+    generate_parser.add_argument(
+        "--batch-size-sections",
+        type=int,
+        default=DEFAULT_QUIZ_BATCH_SIZE_SECTIONS,
     )
 
 
@@ -84,6 +129,22 @@ def format_quiz_generation_result(record) -> str:
 
 def _question_types(args: argparse.Namespace) -> list[str]:
     return args.question_type or list(DEFAULT_QUESTION_TYPES)
+
+
+def _quiz_model(args: argparse.Namespace) -> str:
+    if args.quiz_model:
+        return args.quiz_model
+    return DEFAULT_OPENAI_QUIZ_MODEL if args.openai else DEFAULT_QUIZ_MODEL
+
+
+def _prompt_version(args: argparse.Namespace) -> str:
+    if args.prompt_version:
+        return args.prompt_version
+    return (
+        DEFAULT_OPENAI_QUIZ_PROMPT_VERSION
+        if args.openai
+        else DEFAULT_QUIZ_PROMPT_VERSION
+    )
 
 
 def _load_record(

@@ -46,6 +46,8 @@ def validate_quiz_item(item: dict[str, object]) -> dict[str, object]:
         failed.append("answer_leaked_in_question")
     if _too_broad(question):
         failed.append("too_broad")
+    if item.get("unsupported_fact"):
+        failed.append("unsupported_fact")
 
     return _with_status(item, _unique(failed))
 

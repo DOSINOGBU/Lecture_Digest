@@ -83,6 +83,33 @@ class QuizCliTest(unittest.TestCase):
         self.assertIn("command failed", stderr.getvalue())
         self.assertIn("approved_note_required", stderr.getvalue())
 
+    def test_openai_generate_quizzes_dry_run_does_not_save_quizzes(self):
+        lecture_id = _prepare_approved_note(self.store, self.root)
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "generate-quizzes",
+                    "--lecture-id",
+                    lecture_id,
+                    "--openai",
+                    "--dry-run",
+                    "--batch-size-sections",
+                    "10",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("openai dry-run", output)
+        self.assertIn("willSave=false", output)
+        payload = json.loads(self.store.read_text(encoding="utf-8"))
+        self.assertEqual(payload[0]["status"], "note_approved")
+        self.assertEqual(payload[0]["quiz_items"], [])
+
 
 def _prepare_approved_note(store: Path, root: Path) -> str:
     lecture_id = _register_lecture(store, root)
