@@ -18,10 +18,10 @@
 - [x] 테스트할 실제 강의 파일과 자막 유무를 기록한다.
 - [x] 파일 등록부터 최종 산출물까지 수동 시나리오를 실행한다.
 - [x] STT 결과 segment, OCR dry-run, 교정 dry-run, chunk, index, note, cards, quizzes를 표본 검수한다.
-- [ ] 골든 노트 후보를 생성하고 사람이 승인한 샘플만 저장소 포함 대상으로 정리한다.
 - [x] baseline/비교표를 작성한다.
 - [x] 실패/누락/비용 문제를 risk backlog 또는 새 exec-plan으로 분리한다.
-- [ ] active 계획이 모두 완료되었는지 확인하고 다음 Phase 계획을 제안한다.
+- [x] active 계획이 모두 완료되었는지 확인하고 다음 Phase 계획을 제안한다.
+- [x] 골든 노트 후보 승인과 품질 재검증은 22번 후속 계획으로 이관한다.
 
 ## Validation
 
@@ -38,7 +38,7 @@
 
 ## Result
 
-Partial.
+현재 Phase의 실제 강의 E2E 검증 기록은 완료했다. 다만 산출물 품질 기준은 아직 완전히 통과하지 않았으므로, 후속 재검증은 `22-real-lecture-quality-revalidation.md`에서 진행한다.
 
 - 검증 보고서: `docs/validation/real-lecture-e2e-2026-04-30.md`
 - risk backlog: `docs/exec-plans/tech-debt-tracker.md`
@@ -49,5 +49,4 @@ Partial.
 - 노트 후보 3개는 모두 validation flagged 상태였고, 사람이 승인한 golden note sample은 아직 없다.
 - Vision OCR은 dry-run만 수행했다. 1080p preflight는 확인했지만 실제 OCR 품질 검증은 남아 있다.
 - Windows CP949 환경의 ffprobe decode 실패와 JSON store 동시 쓰기 위험을 후속 리스크로 남겼다.
-
-MVP 품질 기준은 아직 통과하지 않았다. 다음 단계는 사람 승인 담당자가 노트 후보를 검수하고, 소량 대표 프레임으로 실제 Vision OCR 품질/비용을 확인하는 것이다.
+- PRD 반영 이후의 골든 노트 승인, 실제 OCR 품질 검증, 긴 강의 품질 재검증은 22번 계획에서 이어서 수행한다.
