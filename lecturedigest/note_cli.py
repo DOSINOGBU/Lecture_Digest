@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from lecturedigest.errors import ErrorDetail, ValidationError
 from lecturedigest.note_generation import (
@@ -17,6 +18,7 @@ from lecturedigest.openai_notes import (
     format_openai_note_dry_run,
     generate_note_candidates_with_openai,
 )
+from lecturedigest.note_preview import export_note_previews
 from lecturedigest.storage import JsonLectureRepository
 
 
@@ -34,8 +36,18 @@ def generate_notes_command(
     print(
         "[LectureNotes] generate-notes start "
         f"{{ lectureId={args.lecture_id}; provider={provider}; tone={args.tone}; "
-        f"model={model}; promptVersion={prompt_version}; dryRun={args.dry_run} }}"
+        f"model={model}; promptVersion={prompt_version}; dryRun={args.dry_run}; "
+        f"repair={args.repair} }}"
     )
+    if args.repair and not args.openai:
+        raise ValidationError(
+            ErrorDetail(
+                code="openai_required_for_note_repair",
+                message="Note repair is only available with `generate-notes --openai`.",
+                stage="note_generation",
+                retryable=False,
+            )
+        )
     if args.openai:
         result = generate_note_candidates_with_openai(
             record,
@@ -43,6 +55,8 @@ def generate_notes_command(
             model=model,
             prompt_version=prompt_version,
             dry_run=args.dry_run,
+            repair=args.repair,
+            max_repair_attempts=args.max_repair_attempts,
         )
         if args.dry_run:
             print(format_openai_note_dry_run(result))
@@ -55,8 +69,11 @@ def generate_notes_command(
             model=model,
             prompt_version=prompt_version,
         )
+    preview_paths = []
+    if args.export_preview_dir:
+        preview_paths = export_note_previews(updated, args.export_preview_dir)
     repository.save(updated)
-    print(format_note_generation_result(updated))
+    print(format_note_generation_result(updated, preview_paths=preview_paths))
     return 0
 
 
@@ -115,6 +132,9 @@ def add_note_parsers(subparsers: argparse._SubParsersAction) -> None:
     )
     generate_parser.add_argument("--openai", action="store_true")
     generate_parser.add_argument("--dry-run", action="store_true")
+    generate_parser.add_argument("--repair", action="store_true")
+    generate_parser.add_argument("--max-repair-attempts", type=int, default=1)
+    generate_parser.add_argument("--export-preview-dir", type=Path)
 
     approve_parser = subparsers.add_parser("approve-note")
     approve_parser.add_argument("--lecture-id", required=True)
@@ -126,17 +146,24 @@ def add_note_parsers(subparsers: argparse._SubParsersAction) -> None:
     reject_parser.add_argument("--reason")
 
 
-def format_note_generation_result(record) -> str:
+def format_note_generation_result(record, *, preview_paths=None) -> str:
+    preview_paths = preview_paths or []
     flagged = sum(
         1
         for candidate in record.note_candidates
         if _validation_status(candidate) == "flagged"
     )
+    review_required = sum(
+        1
+        for candidate in record.note_candidates
+        if _validation_status(candidate) == "review_required"
+    )
     lines = [
         "[LectureNotes] generate-notes success "
         f"{{ lectureId={record.lecture_id}; status={record.status}; "
         f"stage={record.stage}; candidates={len(record.note_candidates)}; "
-        f"flagged={flagged}; approved=False }}"
+        f"flagged={flagged}; reviewRequired={review_required}; "
+        f"previewExports={len(preview_paths)}; approved=False }}"
     ]
     for candidate in record.note_candidates:
         lines.append(
@@ -146,6 +173,8 @@ def format_note_generation_result(record) -> str:
             f"variant={candidate.get('variant')} "
             f"validation={_validation_status(candidate)}"
         )
+    for path in preview_paths:
+        lines.append(f"- preview={path}")
     return "\n".join(lines)
 
 

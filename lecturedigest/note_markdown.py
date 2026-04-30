@@ -6,6 +6,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from lecturedigest.models import LectureRecord, TranscriptSegment
+from lecturedigest.note_prd import (
+    CORE_TOPIC_PREFIX,
+    default_section_title,
+    markdown_from_sections,
+    validate_prd_candidate,
+)
+from lecturedigest.note_profile import build_content_profile
 
 TOKEN_PATTERN = re.compile(r"[0-9A-Za-z가-힣]+")
 SENTENCE_PATTERN = re.compile(r"(?<=[.!?。！？])\s+")
@@ -23,6 +30,8 @@ STOPWORDS = {
     "with",
     "from",
     "lecture",
+    "source",
+    "components",
     "강의",
     "내용",
     "합니다",
@@ -48,17 +57,15 @@ def build_note_candidate(
     prompt_version: str,
     variant_index: int,
 ) -> dict[str, object]:
+    content_profile = build_content_profile(source_units, chunks=record.chunks)
     sections = _section_rows(record, source_units, variant_index)
     candidate_id = _candidate_id(record, source_units, prompt_version, variant_index)
-    markdown = _markdown(
-        record=record,
-        candidate_id=candidate_id,
-        status="pending_approval",
-        tone=tone,
-        model=model,
-        prompt_version=prompt_version,
+    markdown = markdown_from_sections(title=record.title, sections=sections)
+    validation = validate_prd_candidate(
+        markdown=markdown,
         sections=sections,
         source_units=source_units,
+        content_profile=content_profile,
     )
     return {
         "candidate_id": candidate_id,
@@ -70,8 +77,9 @@ def build_note_candidate(
         "created_at": datetime.now(UTC).isoformat(),
         "markdown": markdown,
         "sections": sections,
-        "source_segment_ids": [unit.segment_id for unit in source_units],
-        "validation": _validate_candidate(markdown, sections, source_units),
+        "source_segment_ids": _union_segment_ids(sections),
+        "content_profile": content_profile.to_dict(),
+        "validation": validation,
     }
 
 
@@ -117,176 +125,235 @@ def _section_rows(
     source_units: list[NoteSourceUnit],
     variant_index: int,
 ) -> list[dict[str, object]]:
+    content_profile = build_content_profile(source_units, chunks=record.chunks)
     source_text = " ".join(unit.text for unit in source_units)
-    keywords = _keywords(source_text)
-    primary = keywords[:3] or ["핵심 개념"]
-    rows = [
-        ("summary", "[1] 강의 요약 (3~5줄)", _summary_lines(source_units, variant_index)),
-        (
-            "key_concepts",
-            "[2] 핵심 개념 (Key Concepts)",
-            _concept_lines(primary, source_units, variant_index),
-        ),
-        ("flow", "[3] 구조 / 흐름 (Flow)", _flow_lines(record, source_units, variant_index)),
-        ("action", "[4] 실행 (Action)", _action_lines(primary, source_units, variant_index)),
-    ]
-    return [
+    keywords = _keywords(source_text, limit=content_profile.target_counts["key_terms"][1])
+    concepts = keywords or ["핵심 개념"]
+    topic_units = _topic_unit_groups(source_units, content_profile.target_counts["core_topics"][1])
+    sections = [
         _section(
             record=record,
-            key=key,
-            title=title,
-            text="\n".join(lines),
-            order=index,
+            key="one_line_summary",
+            text="\n".join(_one_line_summary(source_units, variant_index)),
+            order=1,
             source_units=source_units,
-        )
-        for index, (key, title, lines) in enumerate(rows, start=1)
+        ),
+        _section(
+            record=record,
+            key="learning_goals",
+            text="\n".join(_learning_goal_lines(concepts, source_units, content_profile)),
+            order=2,
+            source_units=source_units,
+        ),
     ]
+    for index, units in enumerate(topic_units, start=1):
+        concept = concepts[min(index - 1, len(concepts) - 1)]
+        sections.append(
+            _section(
+                record=record,
+                key=f"{CORE_TOPIC_PREFIX}{index}",
+                title=f"## {index}. {concept}",
+                text="\n".join(_topic_lines(concept, units, content_profile, index)),
+                order=2 + index,
+                source_units=units,
+            )
+        )
+    sections.extend(
+        [
+            _section(
+                record=record,
+                key="practical_takeaways",
+                text="\n".join(_practical_lines(concepts, source_units, content_profile)),
+                order=40,
+                source_units=source_units,
+            ),
+            _section(
+                record=record,
+                key="key_terms",
+                text="\n".join(_key_term_lines(concepts, source_units, content_profile)),
+                order=50,
+                source_units=source_units,
+            ),
+            _section(
+                record=record,
+                key="review_questions",
+                text="\n".join(_review_question_lines(concepts, source_units, content_profile)),
+                order=60,
+                source_units=source_units,
+            ),
+            _section(
+                record=record,
+                key="final_summary",
+                text="\n\n".join(_final_summary(source_units, content_profile)),
+                order=70,
+                source_units=source_units,
+            ),
+        ]
+    )
+    return sections
 
 
 def _section(
     *,
     record: LectureRecord,
     key: str,
-    title: str,
     text: str,
     order: int,
     source_units: list[NoteSourceUnit],
+    title: str | None = None,
 ) -> dict[str, object]:
+    start_ts, end_ts = _time_range(source_units)
     return {
         "note_section_id": f"{record.lecture_id}:note:{key}",
-        "title": title,
+        "title": title or default_section_title(key),
         "section_key": key,
         "order": order,
         "chapter": _chapter(record),
         "text": text,
         "segment_ids": [unit.segment_id for unit in source_units],
-        "start_ts": source_units[0].start_ts,
-        "end_ts": source_units[-1].end_ts,
-        "flagged": False,
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "flagged": not text or not source_units,
     }
 
 
-def _markdown(
-    *,
-    record: LectureRecord,
-    candidate_id: str,
-    status: str,
-    tone: str,
-    model: str,
-    prompt_version: str,
-    sections: list[dict[str, object]],
-    source_units: list[NoteSourceUnit],
-) -> str:
-    frontmatter = [
-        "---",
-        f"lecture_id: {record.lecture_id}",
-        f"title: {_yaml_value(record.title)}",
-        f"candidate_id: {candidate_id}",
-        f"status: {status}",
-        f"tone: {tone}",
-        f"model: {model}",
-        f"prompt_version: {prompt_version}",
-        f"source_start_ts: {source_units[0].start_ts}",
-        f"source_end_ts: {source_units[-1].end_ts}",
-        f"source_segment_count: {len(source_units)}",
-        "---",
-    ]
-    body = []
-    for section in sections:
-        body.append(str(section["title"]))
-        body.append(str(section["text"]))
-        body.append("")
-    return "\n".join(frontmatter + [""] + body).rstrip() + "\n"
-
-
-def _summary_lines(
+def _one_line_summary(
     source_units: list[NoteSourceUnit],
     variant_index: int,
 ) -> list[str]:
     sentences = _sentences(" ".join(unit.text for unit in source_units))
-    selected = sentences[:5]
     if variant_index == 2:
-        selected = sentences[:3]
-    if variant_index == 3:
-        selected = sentences[-3:] if len(sentences) >= 3 else sentences
-    return [f"- {_with_citation(sentence, source_units)}" for sentence in selected[:5]]
+        selected = sentences[:1]
+    elif variant_index == 3:
+        selected = sentences[-1:] if sentences else []
+    else:
+        selected = sentences[:2]
+    return [f"{_with_citation(sentence, source_units)}" for sentence in selected[:3]]
 
 
-def _concept_lines(
+def _learning_goal_lines(
     concepts: list[str],
     source_units: list[NoteSourceUnit],
-    variant_index: int,
+    content_profile,
 ) -> list[str]:
-    lines = []
-    evidence = _representative_text(source_units, variant_index)
-    for concept in concepts:
+    count = min(len(concepts), content_profile.target_counts["learning_goals"][1])
+    count = max(1, count)
+    verbs = ["설명할 수 있다", "구분할 수 있다", "판단할 수 있다", "이해한다"]
+    return [
+        f"- {concepts[index % len(concepts)]}의 역할을 {verbs[index % len(verbs)]}. {_citation(source_units)}"
+        for index in range(count)
+    ]
+
+
+def _topic_lines(
+    concept: str,
+    source_units: list[NoteSourceUnit],
+    content_profile,
+    topic_index: int,
+) -> list[str]:
+    evidence = _representative_text(source_units, topic_index)
+    lines = [
+        f"{concept}은 이 구간에서 다루는 핵심 주제입니다. {_with_citation(evidence, source_units)}",
+        "강의 흐름을 유지하되, 반복되는 구어체 표현은 복습하기 쉬운 문장으로 정리합니다.",
+    ]
+    if content_profile.has_process_flow:
         lines.extend(
             [
-                f"- {concept}:",
-                f"  정의: (추론) {_with_citation(evidence, source_units)}",
-                "  왜 중요한가: 강의에서 반복적으로 연결되는 핵심 표현입니다.",
-                "  어디에 쓰나: 원문 근거를 다시 보며 실습/복습 항목으로 전환합니다.",
+                "",
+                "```text",
+                "핵심 입력",
+                "  -> 처리 흐름",
+                "  -> 결과 확인",
+                "```",
+            ]
+        )
+    if content_profile.has_comparison:
+        lines.extend(
+            [
+                "",
+                "| 항목 | 설명 |",
+                "| --- | --- |",
+                f"| {concept} | 강의에서 비교하거나 구분해야 하는 개념입니다. |",
+            ]
+        )
+    if content_profile.has_code_or_commands:
+        lines.extend(
+            [
+                "",
+                "```text",
+                _snippet(evidence, 120),
+                "```",
             ]
         )
     return lines
 
 
-def _flow_lines(
-    record: LectureRecord,
-    source_units: list[NoteSourceUnit],
-    variant_index: int,
-) -> list[str]:
-    chapter = _chapter(record)
-    lines = [
-        f"- {chapter} 구간은 {_with_citation(source_units[0].text, source_units)}에서 시작합니다.",
-        f"- 이후 핵심 설명은 {_with_citation(source_units[-1].text, source_units)}로 이어집니다.",
-    ]
-    ocr_lines = [unit.ocr_text for unit in source_units if unit.ocr_text]
-    if ocr_lines:
-        lines.append(f"- 화면 메모: {_snippet(' '.join(ocr_lines), 160)}")
-    if variant_index == 3:
-        lines.append("- 흐름을 실행 단위로 다시 확인합니다.")
-    return lines
-
-
-def _action_lines(
+def _practical_lines(
     concepts: list[str],
     source_units: list[NoteSourceUnit],
-    variant_index: int,
+    content_profile,
 ) -> list[str]:
     lines = [
-        f"- {concepts[0]}를 원문 타임스탬프와 함께 다시 확인합니다. {_citation(source_units)}",
-        "- 모르는 용어는 원문 근거가 있는 항목과 `(추론)` 항목으로 분리합니다.",
+        f"- {concepts[0]}를 원본 타임스탬프와 함께 다시 확인한다. {_citation(source_units)}",
+        "- 출처가 확인되지 않는 내용은 학습 노트나 카드로 확정하지 않는다.",
     ]
-    if variant_index >= 2:
-        lines.append("- 다음 단계에서 승인된 노트만 카드/퀴즈 입력으로 사용합니다.")
+    if content_profile.strategy in {"expanded", "chaptered"}:
+        lines.append("- 긴 강의는 챕터별로 나눠 부분 노트와 전체 요약을 함께 검토한다.")
     return lines
 
 
-def _validate_candidate(
-    markdown: str,
-    sections: list[dict[str, object]],
+def _key_term_lines(
+    concepts: list[str],
     source_units: list[NoteSourceUnit],
-) -> dict[str, object]:
-    source_length = max(1, len(" ".join(unit.text for unit in source_units)))
-    ratio = round(len(markdown) / source_length, 3)
-    unmapped = [
-        str(section["section_key"])
-        for section in sections
-        if not section.get("segment_ids")
+    content_profile,
+) -> list[str]:
+    limit = min(len(concepts), content_profile.target_counts["key_terms"][1])
+    rows = ["| 용어 | 의미 |", "| --- | --- |"]
+    for concept in concepts[: max(1, limit)]:
+        rows.append(f"| {concept} | 강의 원문에서 확인되는 핵심 표현입니다. {_citation(source_units)} |")
+    return rows
+
+
+def _review_question_lines(
+    concepts: list[str],
+    source_units: list[NoteSourceUnit],
+    content_profile,
+) -> list[str]:
+    limit = min(len(concepts), content_profile.target_counts["review_questions"][1])
+    return [
+        f"{index}. {concept}이 이 강의 흐름에서 왜 중요한지 설명할 수 있는가? {_citation(source_units)}"
+        for index, concept in enumerate(concepts[: max(1, limit)], start=1)
     ]
-    failed = []
-    if ratio < 0.4 or ratio > 0.7:
-        failed.append("note_length_ratio_out_of_target")
-    if unmapped:
-        failed.append("source_mapping_missing")
-    return {
-        "status": "passed" if not failed else "flagged",
-        "length_ratio": ratio,
-        "target_length_ratio": "0.4-0.7",
-        "failed_rules": failed,
-        "unmapped_sections": unmapped,
-    }
+
+
+def _final_summary(
+    source_units: list[NoteSourceUnit],
+    content_profile,
+) -> list[str]:
+    first = _snippet(source_units[0].text, 180)
+    last = _snippet(source_units[-1].text, 180)
+    return [
+        f"이 강의는 {first}에서 출발해 핵심 개념을 학습 흐름에 맞게 정리한다. {_citation(source_units)}",
+        (
+            f"마지막으로 {last}까지 이어지는 내용을 복습 질문과 용어 정리로 다시 확인한다. "
+            f"생성 전략은 `{content_profile.strategy}`이다. {_citation(source_units)}"
+        ),
+    ]
+
+
+def _topic_unit_groups(
+    source_units: list[NoteSourceUnit],
+    max_topics: int,
+) -> list[list[NoteSourceUnit]]:
+    if not source_units:
+        return []
+    topic_count = max(1, min(len(source_units), max_topics))
+    groups = []
+    for index in range(topic_count):
+        start = round(index * len(source_units) / topic_count)
+        end = round((index + 1) * len(source_units) / topic_count)
+        groups.append(source_units[start:end] or [source_units[min(index, len(source_units) - 1)]])
+    return groups
 
 
 def _sentences(text: str) -> list[str]:
@@ -296,7 +363,7 @@ def _sentences(text: str) -> list[str]:
     return [text.strip()] if text.strip() else []
 
 
-def _keywords(text: str) -> list[str]:
+def _keywords(text: str, *, limit: int) -> list[str]:
     seen = set()
     keywords = []
     for token in TOKEN_PATTERN.findall(text):
@@ -305,14 +372,16 @@ def _keywords(text: str) -> list[str]:
             continue
         seen.add(normalized)
         keywords.append(token)
-    return keywords[:5]
+        if len(keywords) >= limit:
+            break
+    return keywords
 
 
 def _representative_text(
     source_units: list[NoteSourceUnit],
     variant_index: int,
 ) -> str:
-    index = min(len(source_units) - 1, variant_index - 1)
+    index = min(len(source_units) - 1, max(0, variant_index - 1))
     return _snippet(source_units[index].text, 180)
 
 
@@ -329,6 +398,22 @@ def _citation(source_units: list[NoteSourceUnit]) -> str:
         f"(source: {first.segment_id}..{last.segment_id} "
         f"@ {first.start_ts}-{last.end_ts})"
     )
+
+
+def _time_range(source_units: list[NoteSourceUnit]) -> tuple[str | None, str | None]:
+    if not source_units:
+        return None, None
+    return source_units[0].start_ts, source_units[-1].end_ts
+
+
+def _union_segment_ids(sections: list[dict[str, object]]) -> list[str]:
+    ordered = []
+    for section in sections:
+        for segment_id in section.get("segment_ids", []):
+            value = str(segment_id)
+            if value not in ordered:
+                ordered.append(value)
+    return ordered
 
 
 def _snippet(text: str, max_chars: int) -> str:
@@ -365,8 +450,3 @@ def _chapter(record: LectureRecord) -> str:
     if record.chunks:
         return record.chunks[0].chapter
     return record.middle_category or record.category or "unassigned"
-
-
-def _yaml_value(value: str) -> str:
-    escaped = value.replace('"', '\\"')
-    return f'"{escaped}"'

@@ -8,13 +8,22 @@ from hashlib import sha256
 from lecturedigest.errors import ErrorDetail, NoteGenerationError
 from lecturedigest.models import LectureRecord
 from lecturedigest.note_markdown import NoteSourceUnit, source_hash
+from lecturedigest.note_prd import (
+    CORE_TOPIC_PREFIX,
+    REQUIRED_FIXED_SECTION_KEYS,
+    default_section_title,
+    markdown_from_sections,
+    normalize_section_key,
+    section_sort_key,
+    validate_prd_candidate,
+)
+from lecturedigest.note_profile import NoteContentProfile, build_content_profile
 from lecturedigest.openai_note_prompt import (
     NOTE_STAGE,
     NOTE_VARIANTS,
     OPENAI_NOTE_CANDIDATE_COUNT,
     OPENAI_NOTE_ENDPOINT,
     OPENAI_NOTE_USE_CASE,
-    REQUIRED_NOTE_SECTIONS,
 )
 from lecturedigest.openai_types import OpenAIClientResult
 
@@ -30,6 +39,7 @@ def parse_note_response(
     model: str,
     prompt_version: str,
     client_result: OpenAIClientResult,
+    content_profile: NoteContentProfile | None = None,
     expected_count: int = OPENAI_NOTE_CANDIDATE_COUNT,
     variant_index_start: int = 1,
 ) -> list[dict[str, object]]:
@@ -65,6 +75,9 @@ def parse_note_response(
             prompt_version=prompt_version,
             variant_index=index,
             client_result=client_result,
+            content_profile=(
+                content_profile or build_content_profile(source_units, chunks=record.chunks)
+            ),
         )
         for index, item in enumerate(
             raw_candidates[:expected_count],
@@ -83,6 +96,7 @@ def _candidate_from_payload(
     prompt_version: str,
     variant_index: int,
     client_result: OpenAIClientResult,
+    content_profile: NoteContentProfile,
 ) -> dict[str, object]:
     if not isinstance(item, dict):
         raise _note_error(
@@ -94,6 +108,7 @@ def _candidate_from_payload(
         item.get("sections"),
         record=record,
         source_units=source_units,
+        content_profile=content_profile,
     )
     candidate_id = _candidate_id(
         record,
@@ -102,17 +117,7 @@ def _candidate_from_payload(
         prompt_version=prompt_version,
         variant_index=variant_index,
     )
-    markdown = _markdown(
-        record=record,
-        candidate_id=candidate_id,
-        status="pending_approval",
-        tone=tone,
-        model=model,
-        prompt_version=prompt_version,
-        provider="openai_responses",
-        sections=sections,
-        source_units=source_units,
-    )
+    markdown = markdown_from_sections(title=record.title, sections=sections)
     return {
         "candidate_id": candidate_id,
         "status": "pending_approval",
@@ -123,12 +128,19 @@ def _candidate_from_payload(
         "created_at": datetime.now(UTC).isoformat(),
         "markdown": markdown,
         "sections": sections,
+        "generator_notes": _dict_or_empty(item.get("notes")),
         "source_segment_ids": _union_segment_ids(sections),
-        "validation": _validate_candidate(markdown, sections, source_units),
+        "content_profile": content_profile.to_dict(),
+        "validation": validate_prd_candidate(
+            markdown=markdown,
+            sections=sections,
+            source_units=source_units,
+            content_profile=content_profile,
+        ),
         "provider_metadata": {
             "provider": "openai_responses",
-            "endpoint": OPENAI_NOTE_ENDPOINT,
-            "use_case": OPENAI_NOTE_USE_CASE,
+            "endpoint": client_result.metadata.endpoint or OPENAI_NOTE_ENDPOINT,
+            "use_case": client_result.metadata.use_case or OPENAI_NOTE_USE_CASE,
             "openai_call": client_result.metadata.to_dict(),
         },
     }
@@ -139,27 +151,33 @@ def _sections_from_payload(
     *,
     record: LectureRecord,
     source_units: list[NoteSourceUnit],
+    content_profile: NoteContentProfile,
 ) -> list[dict[str, object]]:
     if not isinstance(raw_sections, list):
         raise _note_error(
             "note_response_malformed",
             "Each OpenAI note candidate must include sections.",
         )
-    section_by_key = {
-        str(section.get("section_key") or ""): section
-        for section in raw_sections
-        if isinstance(section, dict)
-    }
     sections = []
-    for order, (key, title) in enumerate(REQUIRED_NOTE_SECTIONS, start=1):
-        raw = section_by_key.get(key)
-        text = str(raw.get("text") or "").strip() if raw else ""
-        segment_ids = _section_segment_ids(raw, text, source_units) if raw else []
+    topic_index = 1
+    for order, raw in enumerate(raw_sections, start=1):
+        if not isinstance(raw, dict):
+            continue
+        raw_key = raw.get("section_key")
+        raw_role = str(raw.get("section_role") or "").strip().lower()
+        fallback_topic_index = topic_index if raw_role == "core_topic" else None
+        key = normalize_section_key(raw_key, fallback_topic_index=fallback_topic_index)
+        if not key:
+            continue
+        if key.startswith(CORE_TOPIC_PREFIX):
+            topic_index += 1
+        text = str(raw.get("text") or "").strip()
+        segment_ids = _section_segment_ids(raw, text, source_units)
         start_ts, end_ts = _section_time_range(segment_ids, source_units)
         sections.append(
             {
                 "note_section_id": f"{record.lecture_id}:note:{key}",
-                "title": title,
+                "title": str(raw.get("title") or default_section_title(key)),
                 "section_key": key,
                 "order": order,
                 "chapter": _chapter(record),
@@ -170,7 +188,53 @@ def _sections_from_payload(
                 "flagged": not text or not segment_ids,
             }
         )
+    sections = _with_missing_placeholders(record, sections, source_units, content_profile)
+    return sorted(sections, key=section_sort_key)
+
+
+def _with_missing_placeholders(
+    record: LectureRecord,
+    sections: list[dict[str, object]],
+    source_units: list[NoteSourceUnit],
+    content_profile: NoteContentProfile,
+) -> list[dict[str, object]]:
+    keys = {str(section.get("section_key") or "") for section in sections}
+    next_order = len(sections) + 1
+    for key in REQUIRED_FIXED_SECTION_KEYS:
+        if key in keys:
+            continue
+        sections.append(
+            _placeholder_section(record, key, next_order, source_units, content_profile)
+        )
+        next_order += 1
+    if not any(key.startswith(CORE_TOPIC_PREFIX) for key in keys):
+        sections.append(
+            _placeholder_section(record, "topic_1", next_order, source_units, content_profile)
+        )
     return sections
+
+
+def _placeholder_section(
+    record: LectureRecord,
+    key: str,
+    order: int,
+    source_units: list[NoteSourceUnit],
+    content_profile: NoteContentProfile,
+) -> dict[str, object]:
+    return {
+        "note_section_id": f"{record.lecture_id}:note:{key}",
+        "title": default_section_title(key),
+        "section_key": key,
+        "order": order,
+        "chapter": _chapter(record),
+        "text": "",
+        "segment_ids": [],
+        "start_ts": None,
+        "end_ts": None,
+        "flagged": True,
+        "flag_reason": "missing_from_openai_response",
+        "content_strategy": content_profile.strategy,
+    }
 
 
 def _section_segment_ids(
@@ -203,82 +267,6 @@ def _section_time_range(
     if not ordered:
         return None, None
     return ordered[0].start_ts, ordered[-1].end_ts
-
-
-def _markdown(
-    *,
-    record: LectureRecord,
-    candidate_id: str,
-    status: str,
-    tone: str,
-    model: str,
-    prompt_version: str,
-    provider: str,
-    sections: list[dict[str, object]],
-    source_units: list[NoteSourceUnit],
-) -> str:
-    frontmatter = [
-        "---",
-        f"lecture_id: {record.lecture_id}",
-        f"title: {_yaml_value(record.title)}",
-        f"candidate_id: {candidate_id}",
-        f"status: {status}",
-        f"tone: {tone}",
-        f"model: {model}",
-        f"prompt_version: {prompt_version}",
-        f"provider: {provider}",
-        f"source_start_ts: {source_units[0].start_ts}",
-        f"source_end_ts: {source_units[-1].end_ts}",
-        f"source_segment_count: {len(source_units)}",
-        "---",
-    ]
-    body = []
-    for section in sections:
-        body.append(str(section["title"]))
-        body.append(str(section.get("text") or ""))
-        body.append("")
-    return "\n".join(frontmatter + [""] + body).rstrip() + "\n"
-
-
-def _validate_candidate(
-    markdown: str,
-    sections: list[dict[str, object]],
-    source_units: list[NoteSourceUnit],
-) -> dict[str, object]:
-    source_length = max(1, len(" ".join(unit.text for unit in source_units)))
-    ratio = round(len(markdown) / source_length, 3)
-    failed = []
-    warnings = []
-    missing_sections = [
-        str(section["section_key"])
-        for section in sections
-        if not str(section.get("text") or "").strip()
-    ]
-    unmapped = [
-        str(section["section_key"])
-        for section in sections
-        if not section.get("segment_ids")
-    ]
-    if len(sections) != len(REQUIRED_NOTE_SECTIONS):
-        failed.append("section_count_mismatch")
-    if missing_sections:
-        failed.append("required_section_empty")
-    if unmapped:
-        failed.append("source_mapping_missing")
-    if "(source:" not in markdown:
-        failed.append("citation_text_missing")
-    if ratio < 0.1:
-        warnings.append("note_may_be_too_short_for_golden_review")
-    return {
-        "status": "flagged" if failed else "review_required",
-        "length_ratio": ratio,
-        "target_length_ratio": "human review required",
-        "failed_rules": failed,
-        "warnings": warnings,
-        "unmapped_sections": unmapped,
-        "missing_sections": missing_sections,
-        "human_review_required": True,
-    }
 
 
 def _decode_json(data: bytes | str) -> dict[str, object]:
@@ -342,6 +330,10 @@ def _union_segment_ids(sections: list[dict[str, object]]) -> list[str]:
     return ordered
 
 
+def _dict_or_empty(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
 def _candidate_id(
     record: LectureRecord,
     source_units: list[NoteSourceUnit],
@@ -370,11 +362,6 @@ def _chapter(record: LectureRecord) -> str:
     if record.chunks:
         return record.chunks[0].chapter
     return record.middle_category or record.category or "unassigned"
-
-
-def _yaml_value(value: str) -> str:
-    escaped = value.replace('"', '\\"')
-    return f'"{escaped}"'
 
 
 def _note_error(code: str, message: str) -> NoteGenerationError:

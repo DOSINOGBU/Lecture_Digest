@@ -22,12 +22,21 @@ class NoteGenerationTest(unittest.TestCase):
         self.assertEqual(len(updated.note_candidates), 3)
         self.assertEqual(updated.note_sections, [])
         markdown = str(updated.note_candidates[0]["markdown"])
-        self.assertIn("[1] 강의 요약", markdown)
-        self.assertIn("[2] 핵심 개념", markdown)
-        self.assertIn("[3] 구조 / 흐름", markdown)
-        self.assertIn("[4] 실행", markdown)
+        self.assertTrue(markdown.startswith("# Intro"))
+        self.assertIn("## 강의 한 줄 요약", markdown)
+        self.assertIn("## 학습 목표", markdown)
+        self.assertIn("## 1. React", markdown)
+        self.assertIn("## 실무 관점에서 기억할 것", markdown)
+        self.assertIn("## 핵심 용어 정리", markdown)
+        self.assertIn("## 복습 질문", markdown)
+        self.assertIn("## 최종 정리", markdown)
         self.assertIn("source: seg-1..seg-2", markdown)
         self.assertIn("React DOM", markdown)
+        self.assertEqual(updated.note_candidates[0]["content_profile"]["strategy"], "compact")
+        self.assertIn(
+            "source_insufficient_for_full_note",
+            updated.note_candidates[0]["validation"]["quality_flags"],
+        )
 
     def test_approval_promotes_selected_candidate_to_note_sections(self):
         candidates = generate_note_candidates(_lecture_with_segments())
@@ -39,9 +48,9 @@ class NoteGenerationTest(unittest.TestCase):
         self.assertEqual(approved.stage, "note_approval")
         self.assertEqual(approved.approved_note["candidate_id"], candidate_id)
         self.assertEqual(approved.approved_note["status"], "approved")
-        self.assertEqual(len(approved.note_sections), 4)
+        self.assertGreaterEqual(len(approved.note_sections), 7)
         self.assertTrue(
-            all(section["segment_ids"] == ["seg-1", "seg-2"] for section in approved.note_sections)
+            all(section["segment_ids"] for section in approved.note_sections)
         )
         rejected = [
             candidate

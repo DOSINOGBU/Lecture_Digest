@@ -20,6 +20,18 @@ class FakeTransport:
         return self.response
 
 
+class SequenceTransport:
+    def __init__(self, responses: list[OpenAITransportResponse]) -> None:
+        self.responses = list(responses)
+        self.calls = []
+
+    def send(self, **kwargs):
+        self.calls.append(kwargs)
+        if not self.responses:
+            return json_response({"error": "no fake response configured"}, status_code=500)
+        return self.responses.pop(0)
+
+
 class TimeoutTransport:
     def send(self, **kwargs):
         raise TimeoutError("network timeout")
@@ -36,6 +48,17 @@ def openai_client(
 ) -> OpenAIClient:
     return OpenAIClient(
         transport=FakeTransport(response),
+        env=openai_env(api_key),
+    )
+
+
+def sequence_openai_client(
+    responses: list[OpenAITransportResponse],
+    *,
+    api_key: str = TEST_OPENAI_API_KEY,
+) -> OpenAIClient:
+    return OpenAIClient(
+        transport=SequenceTransport(responses),
         env=openai_env(api_key),
     )
 

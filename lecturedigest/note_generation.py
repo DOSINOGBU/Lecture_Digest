@@ -10,9 +10,10 @@ from lecturedigest.note_markdown import (
     source_hash,
     source_units,
 )
+from lecturedigest.note_profile import build_content_profile
 
 DEFAULT_NOTE_MODEL = "local-scriptdigest-v1"
-DEFAULT_NOTE_PROMPT_VERSION = "markdown-note-v1"
+DEFAULT_NOTE_PROMPT_VERSION = "markdown-note-prd-v2"
 DEFAULT_NOTE_TONE = "formal"
 NOTE_CANDIDATE_COUNT = 3
 ALLOWED_TONES = {"formal", "casual", "keep_original"}
@@ -38,6 +39,7 @@ def generate_note_candidates(
                 retryable=False,
             )
         )
+    content_profile = build_content_profile(units, chunks=record.chunks)
 
     candidates = [
         build_note_candidate(
@@ -67,6 +69,7 @@ def generate_note_candidates(
             "tone": normalized_tone,
             "candidate_count": len(candidates),
             "source_hash": source_hash(units),
+            "content_profile": content_profile.to_dict(),
             "approved_note_stale": approved_note.get("status") == "stale",
         },
     )

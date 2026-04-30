@@ -4,29 +4,30 @@ import json
 
 from lecturedigest.models import LectureRecord
 from lecturedigest.note_markdown import NoteSourceUnit
+from lecturedigest.note_profile import NoteContentProfile, build_content_profile
+from lecturedigest.note_prd import FIXED_SECTION_TITLES
 from lecturedigest.openai_client import json_body
 from lecturedigest.openai_types import OpenAIRequest
 
 OPENAI_NOTE_ENDPOINT = "/v1/responses"
 OPENAI_NOTE_USE_CASE = "note_generation"
 DEFAULT_OPENAI_NOTE_MODEL = "gpt-4o"
-DEFAULT_OPENAI_NOTE_PROMPT_VERSION = "openai-markdown-note-v1"
+DEFAULT_OPENAI_NOTE_PROMPT_VERSION = "openai-markdown-note-prd-v2"
 OPENAI_NOTE_CANDIDATE_COUNT = 3
 NOTE_STAGE = "note_generation"
+EXAMPLE_SEGMENT_IDS = ["seg-000001", "seg-000038"]
+EXAMPLE_CITATION = "(source: seg-000001..seg-000038 @ 00:00:00.000-00:01:30.000)"
 
-REQUIRED_NOTE_SECTIONS = (
-    ("summary", "[1] 강의 요약 (3~5줄)"),
-    ("key_concepts", "[2] 핵심 개념 (Key Concepts)"),
-    ("flow", "[3] 구조 / 흐름 (Flow)"),
-    ("action", "[4] 실행 (Action)"),
-)
+REQUIRED_NOTE_SECTIONS = tuple(FIXED_SECTION_TITLES.items())
 NOTE_VARIANTS = ("balanced", "concept_focused", "action_focused")
 
 OPENAI_NOTE_PROMPT = """You are LectureDigest's expert learning-note writer.
 Write high-quality Korean Markdown study notes from the provided lecture chunks only.
 Do not add facts that are not supported by the source chunks.
 Every bullet or paragraph must include a source citation using the provided segment IDs and timestamps.
-Each candidate must include all four required sections exactly once: summary, key_concepts, flow, action.
+The first rendered Markdown line must be the lecture title as an H1.
+Follow the Lecture Note PRD structure: one-line summary, learning goals, numbered core topics, practical takeaways, key terms, review questions, and final summary.
+Use compact notes for short sources without inventing missing concepts. Use expanded or chaptered structure for long sources.
 Preserve technical terms, code terms, URLs, browser/API names, and English keywords exactly when important.
 Return JSON only. Do not wrap the JSON in Markdown fences."""
 
@@ -40,7 +41,14 @@ def build_note_request(
     prompt_version: str = DEFAULT_OPENAI_NOTE_PROMPT_VERSION,
     variant: str | None = None,
 ) -> OpenAIRequest:
-    prompt_payload = _prompt_contract(record, source_units, tone, variant=variant)
+    content_profile = build_content_profile(source_units, chunks=record.chunks)
+    prompt_payload = _prompt_contract(
+        record,
+        source_units,
+        tone,
+        content_profile=content_profile,
+        variant=variant,
+    )
     payload = {
         "model": model,
         "input": [
@@ -59,7 +67,7 @@ def build_note_request(
             },
         ],
         "text": {"format": {"type": "json_object"}},
-        "max_output_tokens": 6000 if variant else 12000,
+        "max_output_tokens": _max_output_tokens(content_profile),
     }
     body = json_body(payload)
     return OpenAIRequest(
@@ -78,6 +86,7 @@ def _prompt_contract(
     units: list[NoteSourceUnit],
     tone: str,
     *,
+    content_profile: NoteContentProfile,
     variant: str | None = None,
 ) -> dict[str, object]:
     variants = [variant] if variant else list(NOTE_VARIANTS)
@@ -87,27 +96,34 @@ def _prompt_contract(
             "tone": tone,
             "candidate_count": len(variants),
             "variants": variants,
-            "required_sections": [
-                {
-                    "section_key": key,
-                    "title": title,
-                    "source_segment_ids": (
-                        "Use segment IDs that directly support this section."
-                    ),
-                }
-                for key, title in REQUIRED_NOTE_SECTIONS
+            "content_profile": content_profile.to_dict(),
+            "required_markdown_order": [
+                "# 강의 제목",
+                "## 강의 한 줄 요약",
+                "## 학습 목표",
+                "## 1. 첫 번째 핵심 주제",
+                "## 2. 두 번째 핵심 주제",
+                "## 실무 관점에서 기억할 것",
+                "## 핵심 용어 정리",
+                "## 복습 질문",
+                "## 최종 정리",
             ],
-            "note_format": {
-                "summary": "3 to 5 concise lines",
-                "key_concepts": "definition, why important, where used",
-                "flow": "lecture logic and step-by-step structure",
-                "action": "concrete tasks the learner can do now",
+            "section_keys": {
+                "one_line_summary": "1-3 supported sentences",
+                "learning_goals": "measurable bullet goals",
+                "topic_N": "numbered core topic sections, e.g. topic_1, topic_2",
+                "practical_takeaways": "practice or work-context takeaways",
+                "key_terms": "Markdown table of source-backed terms",
+                "review_questions": "numbered self-check questions",
+                "final_summary": "2-4 paragraphs when enough source exists",
             },
+            "adaptive_policy": _adaptive_policy(content_profile),
             "hard_requirements": [
                 "Return exactly one candidate for the requested variant.",
-                "The candidate must contain exactly four sections.",
-                "Use section_key values exactly as: summary, key_concepts, flow, action.",
+                "The candidate must include one_line_summary, learning_goals, at least one topic_N section, practical_takeaways, key_terms, review_questions, and final_summary.",
                 "Do not omit source_segment_ids for any section.",
+                "Do not invent goals, terms, examples, tables, code, or diagrams just to satisfy counts.",
+                "If the source is too short for PRD minimums, keep the compact note concise and set source_insufficient_for_full_note in notes.",
             ],
             "citation_format": (
                 "(source: seg-000001..seg-000038 @ "
@@ -118,6 +134,11 @@ def _prompt_contract(
                     {
                         "variant": variants[0],
                         "sections": _example_sections(),
+                        "notes": {
+                            "source_insufficient_for_full_note": (
+                                content_profile.source_insufficient_for_full_note
+                            )
+                        },
                     }
                 ]
             },
@@ -130,6 +151,25 @@ def _prompt_contract(
         },
         "source_chunks": _source_chunks(record, units),
     }
+
+
+def _adaptive_policy(content_profile: NoteContentProfile) -> dict[str, object]:
+    return {
+        "strategy": content_profile.strategy,
+        "target_counts": content_profile.to_dict()["target_counts"],
+        "compact_rule": "For short sources, preserve PRD order but do not fabricate missing items.",
+        "standard_rule": "For normal sources, satisfy PRD counts where evidence supports them.",
+        "expanded_rule": "For long sources, use numbered topics and subsections instead of one huge section.",
+        "chaptered_rule": "For very long sources, produce chapter-level sections and a master summary.",
+    }
+
+
+def _max_output_tokens(content_profile: NoteContentProfile) -> int:
+    if content_profile.strategy == "chaptered":
+        return 12000
+    if content_profile.strategy == "expanded":
+        return 9000
+    return 6000
 
 
 def _source_chunks(
@@ -179,38 +219,48 @@ def _source_chunks(
 
 def _example_sections() -> list[dict[str, object]]:
     return [
-        {
-            "section_key": "summary",
-            "text": (
-                "- Markdown body for the section "
-                "(source: seg-000001..seg-000038 @ 00:00:00.000-00:01:30.000)"
-            ),
-            "source_segment_ids": ["seg-000001", "seg-000038"],
-        },
-        {
-            "section_key": "key_concepts",
-            "text": (
-                "- 개념 1:\n"
-                "  정의: ... (source: seg-000001..seg-000038 @ 00:00:00.000-00:01:30.000)\n"
-                "  왜 중요한가: ... (source: seg-000001..seg-000038 @ 00:00:00.000-00:01:30.000)\n"
-                "  어디에 쓰나: ... (source: seg-000001..seg-000038 @ 00:00:00.000-00:01:30.000)"
-            ),
-            "source_segment_ids": ["seg-000001", "seg-000038"],
-        },
-        {
-            "section_key": "flow",
-            "text": (
-                "- Step 1: ... "
-                "(source: seg-000001..seg-000038 @ 00:00:00.000-00:01:30.000)"
-            ),
-            "source_segment_ids": ["seg-000001", "seg-000038"],
-        },
-        {
-            "section_key": "action",
-            "text": (
-                "- 지금 할 일: ... "
-                "(source: seg-000001..seg-000038 @ 00:00:00.000-00:01:30.000)"
-            ),
-            "source_segment_ids": ["seg-000001", "seg-000038"],
-        },
+        _example_section(
+            "one_line_summary",
+            "## 강의 한 줄 요약",
+            f"Markdown body for the section {EXAMPLE_CITATION}",
+        ),
+        _example_section(
+            "learning_goals",
+            "## 학습 목표",
+            f"- 학습자가 설명할 수 있는 목표 {EXAMPLE_CITATION}",
+        ),
+        _example_section(
+            "topic_1",
+            "## 1. 첫 번째 핵심 주제",
+            f"Core topic body with supported explanation. {EXAMPLE_CITATION}",
+        ),
+        _example_section(
+            "practical_takeaways",
+            "## 실무 관점에서 기억할 것",
+            f"- 실무 연결 포인트 {EXAMPLE_CITATION}",
+        ),
+        _example_section(
+            "key_terms",
+            "## 핵심 용어 정리",
+            f"| 용어 | 의미 |\n| --- | --- |\n| 용어 | 의미 {EXAMPLE_CITATION} |",
+        ),
+        _example_section(
+            "review_questions",
+            "## 복습 질문",
+            f"1. 무엇을 설명할 수 있는가? {EXAMPLE_CITATION}",
+        ),
+        _example_section(
+            "final_summary",
+            "## 최종 정리",
+            f"Final summary paragraph. {EXAMPLE_CITATION}",
+        ),
     ]
+
+
+def _example_section(section_key: str, title: str, text: str) -> dict[str, object]:
+    return {
+        "section_key": section_key,
+        "title": title,
+        "text": text,
+        "source_segment_ids": EXAMPLE_SEGMENT_IDS,
+    }

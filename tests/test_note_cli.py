@@ -46,6 +46,8 @@ class NoteCliTest(unittest.TestCase):
                     "generate-notes",
                     "--lecture-id",
                     lecture_id,
+                    "--export-preview-dir",
+                    str(self.root / "note-previews"),
                 ]
             )
         candidate_ids = _candidate_ids(self.store)
@@ -82,11 +84,13 @@ class NoteCliTest(unittest.TestCase):
         self.assertIn("generate-notes start", output)
         self.assertIn("generate-notes success", output)
         self.assertIn("candidates=3", output)
+        self.assertIn("previewExports=3", output)
         self.assertIn("reject-note success", output)
         self.assertIn("approve-note success", output)
         payload = json.loads(self.store.read_text(encoding="utf-8"))
         self.assertEqual(payload[0]["status"], "note_approved")
-        self.assertEqual(len(payload[0]["note_sections"]), 4)
+        self.assertGreaterEqual(len(payload[0]["note_sections"]), 7)
+        self.assertEqual(len(list((self.root / "note-previews").glob("*.md"))), 3)
 
     def test_generate_notes_openai_dry_run_does_not_save_candidates(self):
         lecture_id = _register_lecture(self.store, self.root)
@@ -102,6 +106,7 @@ class NoteCliTest(unittest.TestCase):
                     lecture_id,
                     "--openai",
                     "--dry-run",
+                    "--repair",
                 ]
             )
 
@@ -109,6 +114,7 @@ class NoteCliTest(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("provider=openai", output)
         self.assertIn("openai dry-run", output)
+        self.assertIn("repairRequested=True", output)
         payload = json.loads(self.store.read_text(encoding="utf-8"))
         self.assertEqual(payload[0]["note_candidates"], [])
 
