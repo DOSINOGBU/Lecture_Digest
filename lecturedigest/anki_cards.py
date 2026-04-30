@@ -2,36 +2,21 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from lecturedigest.anki_card_factory import cards_for_section, source_label
+from lecturedigest.anki_policy import normalize_card_types, resolve_card_generation_plan
+from lecturedigest.anki_validation import remove_duplicate_cards
 from lecturedigest.errors import AnkiExportError, ErrorDetail, ValidationError
-from lecturedigest.models import LectureRecord, TranscriptSegment
+from lecturedigest.models import LectureRecord
 
 DEFAULT_CARD_MODEL = "local-anki-card-v1"
 DEFAULT_CARD_PROMPT_VERSION = "anki-card-v1"
 DEFAULT_DECK_NAME = "LectureDigest"
-DEFAULT_MAX_CARDS = 24
+DEFAULT_MAX_CARDS: int | None = None
 SUPPORTED_EXPORT_FORMATS = {"anki_tsv", "json"}
-CODE_TOKEN_PATTERN = re.compile(
-    r"`([^`]+)`|\b[A-Za-z_][A-Za-z0-9_]*\.(?:py|js|ts|tsx|jsx|html|css)\b|"
-    r"\b[A-Za-z_][A-Za-z0-9_]*\(\)|\b[A-Za-z]+[A-Z][A-Za-z0-9_]*\b"
-)
-WORD_PATTERN = re.compile(r"[0-9A-Za-z가-힣]+")
-STOPWORDS = {
-    "the",
-    "and",
-    "that",
-    "this",
-    "from",
-    "with",
-    "source",
-    "lecture",
-    "action",
-    "flow",
-}
 
 
 @dataclass(frozen=True)
@@ -56,30 +41,37 @@ class AnkiExportResult:
 def generate_anki_cards(
     record: LectureRecord,
     *,
-    max_cards: int = DEFAULT_MAX_CARDS,
+    max_cards: int | None = DEFAULT_MAX_CARDS,
+    card_types: list[str] | str | None = None,
     card_model: str = DEFAULT_CARD_MODEL,
     prompt_version: str = DEFAULT_CARD_PROMPT_VERSION,
 ) -> LectureRecord:
-    if max_cards <= 0:
-        raise ValidationError(
-            ErrorDetail(
-                code="max_cards_invalid",
-                message="max_cards must be at least 1.",
-                stage="anki",
-                retryable=False,
-            )
-        )
     normalized_model = _require_text(card_model, "card_model")
     normalized_prompt = _require_text(prompt_version, "prompt_version")
     sections = _approved_note_sections(record)
     segment_lookup = {segment.segment_id: segment for segment in record.segments}
+    normalized_types = normalize_card_types(card_types)
+    plan = resolve_card_generation_plan(
+        record,
+        sections,
+        max_cards=max_cards,
+        card_types=normalized_types,
+    )
 
     cards = []
     for section in sections:
-        cards.extend(_cards_for_section(record, section, segment_lookup))
-        if len(cards) >= max_cards:
-            break
-    cards = cards[:max_cards]
+        cards.extend(
+            cards_for_section(
+                record,
+                section,
+                segment_lookup,
+                card_types=normalized_types,
+                card_model=normalized_model,
+                prompt_version=normalized_prompt,
+            )
+        )
+    cards, duplicate_count = remove_duplicate_cards(cards)
+    cards = cards[: plan.target_card_count]
     valid_count = sum(1 for card in cards if card["status"] == "ready")
     flagged_count = len(cards) - valid_count
     return replace(
@@ -93,8 +85,10 @@ def generate_anki_cards(
             "card_count": len(cards),
             "valid_count": valid_count,
             "flagged_count": flagged_count,
+            "removed_duplicate_count": duplicate_count,
             "validity_rate": round(valid_count / len(cards), 3) if cards else 0.0,
             "source": "approved_note",
+            "generation_plan": plan.to_dict(),
         },
     )
 
@@ -180,136 +174,6 @@ def _approved_note_sections(record: LectureRecord) -> list[dict[str, object]]:
     return sections
 
 
-def _cards_for_section(
-    record: LectureRecord,
-    section: dict[str, object],
-    segment_lookup: dict[str, TranscriptSegment],
-) -> list[dict[str, object]]:
-    cards = [
-        _qa_card(record, section, segment_lookup),
-    ]
-    cloze = _cloze_card(record, section, segment_lookup)
-    if cloze is not None:
-        cards.append(cloze)
-    code = _code_card(record, section, segment_lookup)
-    if code is not None:
-        cards.append(code)
-    return cards
-
-
-def _qa_card(
-    record: LectureRecord,
-    section: dict[str, object],
-    segment_lookup: dict[str, TranscriptSegment],
-) -> dict[str, object]:
-    title = _section_title(section)
-    source = _source_payload(record, section, segment_lookup)
-    card = {
-        "card_id": _card_id(record, section, "qa"),
-        "card_type": "qa",
-        "front": f"{record.title}: what is the key point of {title}?",
-        "back": f"{_snippet(_section_text(section), 420)}\n\n{_source_label(source)}",
-        "cloze_text": "",
-        "extra": _source_label(source),
-        "tags": _tags(record, "qa"),
-        "source": source,
-    }
-    return _with_validation(card)
-
-
-def _cloze_card(
-    record: LectureRecord,
-    section: dict[str, object],
-    segment_lookup: dict[str, TranscriptSegment],
-) -> dict[str, object] | None:
-    text = _first_content_line(_section_text(section))
-    keyword = _keyword(text)
-    if not text or not keyword:
-        return None
-    source = _source_payload(record, section, segment_lookup)
-    cloze_text = text.replace(keyword, f"{{{{c1::{keyword}}}}}", 1)
-    card = {
-        "card_id": _card_id(record, section, "cloze"),
-        "card_type": "cloze",
-        "front": cloze_text,
-        "back": "",
-        "cloze_text": cloze_text,
-        "extra": _source_label(source),
-        "tags": _tags(record, "cloze"),
-        "source": source,
-    }
-    return _with_validation(card)
-
-
-def _code_card(
-    record: LectureRecord,
-    section: dict[str, object],
-    segment_lookup: dict[str, TranscriptSegment],
-) -> dict[str, object] | None:
-    text = _section_text(section)
-    tokens = _code_tokens(text)
-    if not tokens:
-        return None
-    source = _source_payload(record, section, segment_lookup)
-    token = tokens[0]
-    card = {
-        "card_id": _card_id(record, section, "code"),
-        "card_type": "code",
-        "front": f"What role does `{token}` have in this lecture section?",
-        "back": f"{_snippet(text, 360)}\n\n{_source_label(source)}",
-        "cloze_text": "",
-        "extra": _source_label(source),
-        "tags": _tags(record, "code"),
-        "source": source,
-    }
-    return _with_validation(card)
-
-
-def _source_payload(
-    record: LectureRecord,
-    section: dict[str, object],
-    segment_lookup: dict[str, TranscriptSegment],
-) -> dict[str, object]:
-    segment_ids = [str(value) for value in _as_list(section.get("segment_ids", []))]
-    mapped_segments = [segment_lookup[item] for item in segment_ids if item in segment_lookup]
-    start_ts = str(section.get("start_ts") or "")
-    end_ts = str(section.get("end_ts") or "")
-    if mapped_segments:
-        start_ts = start_ts or mapped_segments[0].start_ts
-        end_ts = end_ts or mapped_segments[-1].end_ts
-    return {
-        "lecture_id": record.lecture_id,
-        "lecture_title": record.lecture_title or record.title,
-        "title": record.title,
-        "chapter": str(section.get("chapter") or "unassigned"),
-        "segment_ids": segment_ids,
-        "start_ts": start_ts,
-        "end_ts": end_ts,
-        "jump_link": _jump_link(record, start_ts),
-        "mapping_status": "mapped" if segment_ids and start_ts else "flagged",
-    }
-
-
-def _with_validation(card: dict[str, object]) -> dict[str, object]:
-    failed = []
-    if not str(card.get("front") or card.get("cloze_text") or "").strip():
-        failed.append("front_required")
-    if card.get("card_type") != "cloze" and not str(card.get("back") or "").strip():
-        failed.append("back_required")
-    source = card.get("source", {})
-    if not isinstance(source, dict) or source.get("mapping_status") != "mapped":
-        failed.append("source_mapping_required")
-    status = "ready" if not failed else "flagged"
-    return {
-        **card,
-        "status": status,
-        "validation": {
-            "status": "passed" if not failed else "flagged",
-            "failed_rules": failed,
-        },
-    }
-
-
 def _write_tsv(path: Path, cards: list[dict[str, object]], deck_name: str) -> None:
     with path.open("w", encoding="utf-8", newline="") as output:
         writer = csv.writer(output, delimiter="\t", lineterminator="\n")
@@ -324,7 +188,7 @@ def _write_tsv(path: Path, cards: list[dict[str, object]], deck_name: str) -> No
                     front,
                     str(card.get("back") or card.get("extra") or ""),
                     " ".join(str(tag) for tag in _as_list(card.get("tags", []))),
-                    _source_label(card.get("source", {})),
+                    source_label(card.get("source", {})),
                 ]
             )
 
@@ -376,90 +240,6 @@ def _require_text(value: str, field_name: str) -> str:
             )
         )
     return normalized
-
-
-def _section_title(section: dict[str, object]) -> str:
-    return str(section.get("title") or section.get("section_key") or "note section")
-
-
-def _section_text(section: dict[str, object]) -> str:
-    return str(section.get("text") or section.get("body") or "").strip()
-
-
-def _first_content_line(text: str) -> str:
-    for line in text.splitlines():
-        cleaned = line.strip(" -")
-        if cleaned and not cleaned.endswith(":"):
-            return cleaned
-    return ""
-
-
-def _keyword(text: str) -> str:
-    for token in WORD_PATTERN.findall(text):
-        normalized = token.lower()
-        if normalized not in STOPWORDS and len(normalized) >= 3:
-            return token
-    return ""
-
-
-def _code_tokens(text: str) -> list[str]:
-    tokens = []
-    for match in CODE_TOKEN_PATTERN.finditer(text):
-        token = match.group(1) or match.group(0)
-        if token not in tokens:
-            tokens.append(token)
-    return tokens
-
-
-def _card_id(record: LectureRecord, section: dict[str, object], card_type: str) -> str:
-    section_id = str(section.get("note_section_id") or section.get("section_key"))
-    safe_section = re.sub(r"[^0-9A-Za-z_-]+", "-", section_id).strip("-")
-    return f"{record.lecture_id}:{safe_section}:{card_type}"
-
-
-def _tags(record: LectureRecord, card_type: str) -> list[str]:
-    tags = ["lecturedigest", card_type, record.category]
-    if record.major_category:
-        tags.append(record.major_category)
-    if record.middle_category:
-        tags.append(record.middle_category)
-    return [tag.replace(" ", "_") for tag in tags if tag]
-
-
-def _source_label(source: object) -> str:
-    if not isinstance(source, dict):
-        return "source: unmapped"
-    segment_ids = ", ".join(str(item) for item in _as_list(source.get("segment_ids", [])))
-    if not segment_ids:
-        return "source: unmapped"
-    return (
-        f"source: {segment_ids} @ {source.get('start_ts', '')}-"
-        f"{source.get('end_ts', '')}"
-    )
-
-
-def _jump_link(record: LectureRecord, start_ts: str) -> str:
-    seconds = 0
-    if start_ts:
-        parts = start_ts.replace(",", ".").split(":")
-        if len(parts) == 3:
-            try:
-                seconds = (
-                    int(parts[0]) * 3600
-                    + int(parts[1]) * 60
-                    + round(float(parts[2]))
-                )
-            except ValueError:
-                seconds = 0
-    return f"lecturedigest://lecture/{record.lecture_id}?t={seconds}"
-
-
-def _snippet(text: str, max_chars: int) -> str:
-    compact = " ".join(text.split())
-    if len(compact) <= max_chars:
-        return compact
-    trimmed = compact[: max_chars + 1].rsplit(" ", maxsplit=1)[0]
-    return f"{trimmed or compact[:max_chars]}..."
 
 
 def _as_dict_list(value: object) -> list[dict[str, object]]:
