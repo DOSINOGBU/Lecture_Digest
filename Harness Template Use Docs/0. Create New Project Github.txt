@@ -1,0 +1,13 @@
+새 프로젝트 만들기
+git clone --branch docs/harness-governance https://github.com/DOSINOGBU/Harness-Template.git My-New-Project
+cd My-New-Project
+Remove-Item -Recurse -Force .git
+git init
+git add .
+git commit -m "chore(harness): initialize project harness"
+
+
+그다음 새 GitHub repo를 만들고 연결합니다.
+git remote add origin https://github.com/DOSINOGBU/Lecture_Digest.git
+git branch -M main
+git push -u origin main
