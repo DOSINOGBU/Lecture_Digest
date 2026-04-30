@@ -164,100 +164,11 @@ class LectureRecord:
             status=str(payload["status"]),
             stage=str(payload["stage"]),
             transcript_source=str(payload["transcript_source"]),
-            segments=[
-                TranscriptSegment(
-                    segment_id=str(segment["segment_id"]),
-                    start_ts=str(segment["start_ts"]),
-                    end_ts=str(segment["end_ts"]),
-                    text=str(segment["text"]),
-                    speaker=(
-                        str(segment["speaker"])
-                        if segment.get("speaker") is not None
-                        else None
-                    ),
-                    ocr_text=_optional_string(segment.get("ocr_text")),
-                    slide_id=_optional_string(segment.get("slide_id")),
-                    source_frame_ts=_optional_string(segment.get("source_frame_ts")),
-                )
-                for segment in _as_dict_list(payload.get("segments", []))
-            ],
-            chunks=[
-                TranscriptChunk(
-                    chunk_id=str(chunk["chunk_id"]),
-                    lecture_id=str(chunk["lecture_id"]),
-                    chapter=str(chunk["chapter"]),
-                    start_ts=str(chunk["start_ts"]),
-                    end_ts=str(chunk["end_ts"]),
-                    text=str(chunk["text"]),
-                    segment_ids=[
-                        str(segment_id)
-                        for segment_id in _as_string_list(chunk.get("segment_ids", []))
-                    ],
-                    speaker=(
-                        str(chunk["speaker"])
-                        if chunk.get("speaker") is not None
-                        else None
-                    ),
-                    ocr_text=(
-                        str(chunk["ocr_text"])
-                        if chunk.get("ocr_text") is not None
-                        else None
-                    ),
-                )
-                for chunk in _as_dict_list(payload.get("chunks", []))
-            ],
-            issues=[
-                ProcessingIssue(
-                    code=str(issue["code"]),
-                    message=str(issue["message"]),
-                    stage=str(issue["stage"]),
-                    retryable=bool(issue.get("retryable", False)),
-                )
-                for issue in _as_dict_list(payload.get("issues", []))
-            ],
-            slides=[
-                SlideOcrResult(
-                    slide_id=str(slide["slide_id"]),
-                    source_frame_ts=str(slide["source_frame_ts"]),
-                    raw_ocr_text=str(slide.get("raw_ocr_text", "")),
-                    refined_ocr_text=str(slide.get("refined_ocr_text", "")),
-                    confidence=_optional_float(slide.get("confidence")),
-                    provider_metadata=_as_metadata(
-                        slide.get("provider_metadata", {})
-                    ),
-                    frame_width=_optional_int(slide.get("frame_width")),
-                    frame_height=_optional_int(slide.get("frame_height")),
-                    change_score=_optional_float(slide.get("change_score")),
-                    status=str(slide.get("status", "succeeded")),
-                )
-                for slide in _as_dict_list(payload.get("slides", []))
-            ],
-            correction_log=[
-                CorrectionLogEntry(
-                    segment_id=str(entry["segment_id"]),
-                    start_ts=str(entry["start_ts"]),
-                    end_ts=str(entry["end_ts"]),
-                    original_text=str(entry.get("original_text", "")),
-                    corrected_text=str(entry.get("corrected_text", "")),
-                    confidence=_optional_float(entry.get("confidence")),
-                    reason=_optional_string(entry.get("reason")),
-                    applied=bool(entry.get("applied", False)),
-                    status=str(entry.get("status", "review_required")),
-                    provider_metadata=_as_metadata(
-                        entry.get("provider_metadata", {})
-                    ),
-                    protected_terms=[
-                        str(term)
-                        for term in _as_string_list(
-                            entry.get("protected_terms", [])
-                        )
-                    ],
-                    original_error=_optional_string(entry.get("original_error")),
-                    retryable=bool(entry.get("retryable", False)),
-                    source=_optional_string(entry.get("source")),
-                )
-                for entry in _as_dict_list(payload.get("correction_log", []))
-            ],
+            segments=_segments_from_payload(payload),
+            chunks=_chunks_from_payload(payload),
+            issues=_issues_from_payload(payload),
+            slides=_slides_from_payload(payload),
+            correction_log=_correction_log_from_payload(payload),
             transcript_metadata=_as_metadata(payload.get("transcript_metadata", {})),
             correction_metadata=_as_metadata(payload.get("correction_metadata", {})),
             search_index=_as_dict_list(payload.get("search_index", [])),
@@ -278,6 +189,99 @@ class LectureRecord:
             middle_category=_optional_string(payload.get("middle_category")),
             clip_title=_optional_string(payload.get("clip_title")),
         )
+
+
+def _segments_from_payload(payload: dict[str, object]) -> list[TranscriptSegment]:
+    return [
+        TranscriptSegment(
+            segment_id=str(segment["segment_id"]),
+            start_ts=str(segment["start_ts"]),
+            end_ts=str(segment["end_ts"]),
+            text=str(segment["text"]),
+            speaker=_optional_string(segment.get("speaker")),
+            ocr_text=_optional_string(segment.get("ocr_text")),
+            slide_id=_optional_string(segment.get("slide_id")),
+            source_frame_ts=_optional_string(segment.get("source_frame_ts")),
+        )
+        for segment in _as_dict_list(payload.get("segments", []))
+    ]
+
+
+def _chunks_from_payload(payload: dict[str, object]) -> list[TranscriptChunk]:
+    return [
+        TranscriptChunk(
+            chunk_id=str(chunk["chunk_id"]),
+            lecture_id=str(chunk["lecture_id"]),
+            chapter=str(chunk["chapter"]),
+            start_ts=str(chunk["start_ts"]),
+            end_ts=str(chunk["end_ts"]),
+            text=str(chunk["text"]),
+            segment_ids=[
+                str(segment_id)
+                for segment_id in _as_string_list(chunk.get("segment_ids", []))
+            ],
+            speaker=_optional_string(chunk.get("speaker")),
+            ocr_text=_optional_string(chunk.get("ocr_text")),
+        )
+        for chunk in _as_dict_list(payload.get("chunks", []))
+    ]
+
+
+def _issues_from_payload(payload: dict[str, object]) -> list[ProcessingIssue]:
+    return [
+        ProcessingIssue(
+            code=str(issue["code"]),
+            message=str(issue["message"]),
+            stage=str(issue["stage"]),
+            retryable=bool(issue.get("retryable", False)),
+        )
+        for issue in _as_dict_list(payload.get("issues", []))
+    ]
+
+
+def _slides_from_payload(payload: dict[str, object]) -> list[SlideOcrResult]:
+    return [
+        SlideOcrResult(
+            slide_id=str(slide["slide_id"]),
+            source_frame_ts=str(slide["source_frame_ts"]),
+            raw_ocr_text=str(slide.get("raw_ocr_text", "")),
+            refined_ocr_text=str(slide.get("refined_ocr_text", "")),
+            confidence=_optional_float(slide.get("confidence")),
+            provider_metadata=_as_metadata(slide.get("provider_metadata", {})),
+            frame_width=_optional_int(slide.get("frame_width")),
+            frame_height=_optional_int(slide.get("frame_height")),
+            change_score=_optional_float(slide.get("change_score")),
+            status=str(slide.get("status", "succeeded")),
+        )
+        for slide in _as_dict_list(payload.get("slides", []))
+    ]
+
+
+def _correction_log_from_payload(
+    payload: dict[str, object],
+) -> list[CorrectionLogEntry]:
+    return [
+        CorrectionLogEntry(
+            segment_id=str(entry["segment_id"]),
+            start_ts=str(entry["start_ts"]),
+            end_ts=str(entry["end_ts"]),
+            original_text=str(entry.get("original_text", "")),
+            corrected_text=str(entry.get("corrected_text", "")),
+            confidence=_optional_float(entry.get("confidence")),
+            reason=_optional_string(entry.get("reason")),
+            applied=bool(entry.get("applied", False)),
+            status=str(entry.get("status", "review_required")),
+            provider_metadata=_as_metadata(entry.get("provider_metadata", {})),
+            protected_terms=[
+                str(term)
+                for term in _as_string_list(entry.get("protected_terms", []))
+            ],
+            original_error=_optional_string(entry.get("original_error")),
+            retryable=bool(entry.get("retryable", False)),
+            source=_optional_string(entry.get("source")),
+        )
+        for entry in _as_dict_list(payload.get("correction_log", []))
+    ]
 
 
 def _as_dict_list(value: object) -> list[dict[str, object]]:
