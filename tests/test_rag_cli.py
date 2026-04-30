@@ -79,6 +79,54 @@ class RagCliTest(unittest.TestCase):
         self.assertIn("ask answered", output)
         self.assertIn("lecturedigest://lecture/", output)
 
+    def test_index_embedding_dry_run_skips_upload_and_save(self):
+        lecture_id = _register_and_chunk(self.store, self.root)
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "index",
+                    "--lecture-id",
+                    lecture_id,
+                    "--embed-openai",
+                    "--dry-run",
+                ]
+            )
+
+        payload = json.loads(self.store.read_text(encoding="utf-8"))
+        self.assertEqual(exit_code, 0)
+        self.assertIn("request dry-run", stdout.getvalue())
+        self.assertIn("willUpload=false", stdout.getvalue())
+        self.assertEqual(payload[0]["search_index"], [])
+
+    def test_query_embedding_dry_run_skips_upload(self):
+        lecture_id = _register_and_chunk(self.store, self.root)
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(["--store", str(self.store), "index", "--lecture-id", lecture_id])
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "ask",
+                    "--lecture-id",
+                    lecture_id,
+                    "--question",
+                    "React DOM",
+                    "--embed-openai",
+                    "--dry-run",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("query-embedding dry-run", stdout.getvalue())
+        self.assertIn("willUpload=false", stdout.getvalue())
+
     def test_ask_outputs_insufficient_evidence_state(self):
         lecture_id = _register_and_chunk(self.store, self.root)
         with contextlib.redirect_stdout(io.StringIO()):

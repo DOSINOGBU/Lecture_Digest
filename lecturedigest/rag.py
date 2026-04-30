@@ -2,23 +2,27 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from dataclasses import dataclass, replace
 from time import perf_counter
 
 from lecturedigest.errors import ErrorDetail, IndexingError, ValidationError
 from lecturedigest.models import LectureRecord, TranscriptChunk
-from lecturedigest.timecode import timestamp_to_seconds
+from lecturedigest.rag_links import citation_label, jump_link
+from lecturedigest.rag_search import score_metadata, search_entries, tokens
+from lecturedigest.rag_vector import (
+    EMBEDDING_STATUS_PENDING,
+    merge_embedding_cache,
+    source_hash,
+)
 
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large"
-DEFAULT_VECTOR_STORE = "qdrant"
+DEFAULT_VECTOR_STORE = "local_json"
 DEFAULT_SUMMARY_MODEL = "local-extractive-v1"
 DEFAULT_SUMMARY_PROMPT_VERSION = "summary-v1"
 DEFAULT_RAG_PROMPT_VERSION = "rag-cited-answer-v1"
 DEFAULT_TOP_K = 3
 DEFAULT_MIN_SCORE = 1.0
 
-TOKEN_PATTERN = re.compile(r"[0-9A-Za-z가-힣_]+")
 STOPWORDS = {
     "그리고",
     "그래서",
@@ -38,11 +42,15 @@ STOPWORDS = {
 class RagCitation:
     label: str
     jump_link: str
+    entry_id: str
+    kind: str
     chunk_id: str
+    note_section_id: str | None
     start_ts: str
     end_ts: str
     segment_ids: list[str]
     score: float
+    search_strategy: str
 
 
 @dataclass(frozen=True)
@@ -51,6 +59,8 @@ class RagAnswer:
     answer: str
     citations: list[RagCitation]
     elapsed_ms: int
+    search_strategy: str
+    score_metadata: dict[str, object]
 
 
 def build_search_index(
@@ -87,7 +97,11 @@ def build_search_index(
             embedding_model=embedding_model,
             vector_store=vector_store,
         )
-        for section in record.note_sections
+        for section in _approved_note_sections(record)
+    )
+    entries = merge_embedding_cache(entries, record.search_index)
+    embedding_statuses = sorted(
+        {str(entry.get("embedding_status")) for entry in entries}
     )
     return replace(
         record,
@@ -97,8 +111,8 @@ def build_search_index(
         rag_metadata={
             "embedding_model": embedding_model,
             "vector_store": vector_store,
-            "embedding_status": "pending_external_embedding",
-            "search_strategy": "local_lexical_fallback",
+            "embedding_status": ",".join(embedding_statuses),
+            "search_strategy": "vector_first_with_lexical_fallback",
             "index_entry_count": len(entries),
         },
     )
@@ -146,6 +160,7 @@ def answer_question(
     question: str,
     top_k: int = DEFAULT_TOP_K,
     min_score: float = DEFAULT_MIN_SCORE,
+    query_embedding: list[float] | None = None,
 ) -> RagAnswer:
     started = perf_counter()
     normalized_question = _require_text(question, "question")
@@ -177,7 +192,14 @@ def answer_question(
             )
         )
 
-    matches = _search(record, normalized_question, top_k=top_k)
+    search_result = search_entries(
+        record.search_index,
+        normalized_question,
+        top_k=top_k,
+        min_score=min_score,
+        query_embedding=query_embedding,
+    )
+    matches = search_result.matches
     usable_matches = [match for match in matches if match[0] >= min_score]
     elapsed_ms = round((perf_counter() - started) * 1000)
     if not usable_matches:
@@ -189,10 +211,21 @@ def answer_question(
             ),
             citations=[],
             elapsed_ms=elapsed_ms,
+            search_strategy=search_result.strategy,
+            score_metadata=score_metadata(
+                matches,
+                min_score,
+                search_result.strategy,
+            ),
         )
 
     citations = [
-        _citation_from_entry(record, entry, score)
+        _citation_from_entry(
+            record,
+            entry,
+            score,
+            search_strategy=search_result.strategy,
+        )
         for score, entry in usable_matches
     ]
     return RagAnswer(
@@ -200,6 +233,12 @@ def answer_question(
         answer=_extractive_answer(usable_matches, citations),
         citations=citations,
         elapsed_ms=elapsed_ms,
+        search_strategy=search_result.strategy,
+        score_metadata=score_metadata(
+            usable_matches,
+            min_score,
+            search_result.strategy,
+        ),
     )
 
 
@@ -230,13 +269,14 @@ def _chunk_index_entry(
         "refined_ocr_text": chunk.ocr_text,
         "indexed_text": indexed_text,
         "keywords": _keywords(indexed_text),
+        "source_hash": source_hash(indexed_text),
     }
     return {
         **payload,
         "embedding_model": embedding_model,
         "vector_store": vector_store,
         "cache_key": _cache_key(payload, embedding_model),
-        "embedding_status": "pending_external_embedding",
+        "embedding_status": EMBEDDING_STATUS_PENDING,
     }
 
 
@@ -255,6 +295,9 @@ def _note_index_entry(
     payload = {
         "entry_id": str(section.get("note_section_id") or section.get("section_id")),
         "kind": "note_section",
+        "note_section_id": str(
+            section.get("note_section_id") or section.get("section_id")
+        ),
         "lecture_id": record.lecture_id,
         "title": record.title,
         "chapter": str(section.get("chapter") or "unassigned"),
@@ -266,13 +309,14 @@ def _note_index_entry(
         "refined_ocr_text": None,
         "indexed_text": indexed_text,
         "keywords": _keywords(indexed_text),
+        "source_hash": source_hash(indexed_text),
     }
     return {
         **payload,
         "embedding_model": embedding_model,
         "vector_store": vector_store,
         "cache_key": _cache_key(payload, embedding_model),
-        "embedding_status": "pending_external_embedding",
+        "embedding_status": EMBEDDING_STATUS_PENDING,
     }
 
 
@@ -286,7 +330,7 @@ def _l1_summary(record: LectureRecord, chunk: TranscriptChunk) -> dict[str, obje
         "end_ts": chunk.end_ts,
         "segment_ids": chunk.segment_ids,
         "summary": _snippet(chunk.text, 220),
-        "citation": _citation_label(record, chunk.chapter, chunk.start_ts),
+        "citation": citation_label(record, chunk.chapter, chunk.start_ts),
     }
 
 
@@ -349,26 +393,6 @@ def _l3_summary(
     }
 
 
-def _search(
-    record: LectureRecord,
-    question: str,
-    *,
-    top_k: int,
-) -> list[tuple[float, dict[str, object]]]:
-    query_tokens = set(_tokens(question))
-    scored = []
-    for entry in record.search_index:
-        entry_tokens = set(_tokens(str(entry.get("indexed_text", ""))))
-        if not entry_tokens:
-            continue
-        overlap = query_tokens.intersection(entry_tokens)
-        score = float(len(overlap))
-        if score:
-            scored.append((score, entry))
-    scored.sort(key=lambda item: (-item[0], str(item[1].get("start_ts", ""))))
-    return scored[:top_k]
-
-
 def _extractive_answer(
     matches: list[tuple[float, dict[str, object]]],
     citations: list[RagCitation],
@@ -384,14 +408,19 @@ def _citation_from_entry(
     record: LectureRecord,
     entry: dict[str, object],
     score: float,
+    *,
+    search_strategy: str,
 ) -> RagCitation:
     chapter = str(entry.get("chapter") or "unassigned")
     start_ts = str(entry.get("start_ts") or "00:00:00.000")
     end_ts = str(entry.get("end_ts") or start_ts)
     return RagCitation(
-        label=_citation_label(record, chapter, start_ts),
-        jump_link=_jump_link(record, start_ts),
+        label=citation_label(record, chapter, start_ts),
+        jump_link=jump_link(record, start_ts),
+        entry_id=str(entry.get("entry_id") or ""),
+        kind=str(entry.get("kind") or "chunk"),
         chunk_id=str(entry.get("chunk_id") or entry.get("entry_id") or ""),
+        note_section_id=_optional_string(entry.get("note_section_id")),
         start_ts=start_ts,
         end_ts=end_ts,
         segment_ids=[
@@ -399,31 +428,8 @@ def _citation_from_entry(
             for segment_id in _as_list(entry.get("segment_ids", []))
         ],
         score=score,
+        search_strategy=search_strategy,
     )
-
-
-def _citation_label(record: LectureRecord, chapter: str, start_ts: str) -> str:
-    return f"[{record.title} - {chapter} - {_display_timestamp(start_ts)}]"
-
-
-def _display_timestamp(timestamp: str) -> str:
-    try:
-        total_seconds = round(timestamp_to_seconds(timestamp))
-    except ValueError:
-        return timestamp
-    minutes, seconds = divmod(total_seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes:02d}:{seconds:02d}"
-
-
-def _jump_link(record: LectureRecord, start_ts: str) -> str:
-    try:
-        seconds = round(timestamp_to_seconds(start_ts))
-    except ValueError:
-        seconds = 0
-    return f"lecturedigest://lecture/{record.lecture_id}?t={seconds}"
 
 
 def _indexed_text(text: str, ocr_text: str | None) -> str:
@@ -443,20 +449,21 @@ def _cache_key(payload: dict[str, object], embedding_model: str) -> str:
     return f"embedding:{embedding_model}:{digest}"
 
 
+def _approved_note_sections(record: LectureRecord) -> list[dict[str, object]]:
+    if record.approved_note.get("status") != "approved":
+        return []
+    return record.note_sections
+
+
 def _keywords(text: str) -> list[str]:
     seen = set()
     keywords = []
-    for token in _tokens(text):
+    for token in tokens(text):
         if token in STOPWORDS or token in seen or len(token) < 2:
             continue
         seen.add(token)
         keywords.append(token)
     return keywords[:20]
-
-
-def _tokens(text: str) -> list[str]:
-    return [token.lower() for token in TOKEN_PATTERN.findall(text)]
-
 
 def _snippet(text: str, max_chars: int) -> str:
     compact = " ".join(text.split())
@@ -484,3 +491,9 @@ def _as_list(value: object) -> list[object]:
     if not isinstance(value, list):
         return []
     return value
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
