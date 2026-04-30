@@ -61,12 +61,16 @@ def add_quiz_parsers(subparsers: argparse._SubParsersAction) -> None:
 def format_quiz_generation_result(record) -> str:
     flagged = sum(1 for item in record.quiz_items if item.get("status") == "flagged")
     ready = len(record.quiz_items) - flagged
+    plan = record.quiz_metadata.get("generation_plan", {})
     lines = [
         "[LectureQuiz] generate-quizzes success "
         f"{{ lectureId={record.lecture_id}; status={record.status}; "
         f"stage={record.stage}; quizzes={len(record.quiz_items)}; "
         f"ready={ready}; flagged={flagged}; "
-        f"seed={record.quiz_metadata.get('seed', '')} }}"
+        f"seed={record.quiz_metadata.get('seed', '')}; "
+        f"source={record.quiz_metadata.get('source', 'unknown')}; "
+        f"strategy={plan.get('strategy', 'unknown')}; "
+        f"targetQuizzes={plan.get('target_quiz_count', len(record.quiz_items))} }}"
     ]
     for item in record.quiz_items:
         lines.append(
