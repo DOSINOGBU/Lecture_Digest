@@ -21,6 +21,26 @@ class TranscriptSegment:
     end_ts: str
     text: str
     speaker: str | None = None
+    ocr_text: str | None = None
+    slide_id: str | None = None
+    source_frame_ts: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class SlideOcrResult:
+    slide_id: str
+    source_frame_ts: str
+    raw_ocr_text: str
+    refined_ocr_text: str
+    confidence: float | None = None
+    provider_metadata: dict[str, object] = field(default_factory=dict)
+    frame_width: int | None = None
+    frame_height: int | None = None
+    change_score: float | None = None
+    status: str = "succeeded"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -56,6 +76,7 @@ class LectureRecord:
     segments: list[TranscriptSegment] = field(default_factory=list)
     chunks: list[TranscriptChunk] = field(default_factory=list)
     issues: list[ProcessingIssue] = field(default_factory=list)
+    slides: list[SlideOcrResult] = field(default_factory=list)
     created_at: str | None = None
     input_mode: str = "file"
     lecture_title: str | None = None
@@ -77,6 +98,7 @@ class LectureRecord:
             "segments": [segment.to_dict() for segment in self.segments],
             "chunks": [chunk.to_dict() for chunk in self.chunks],
             "issues": [issue.to_dict() for issue in self.issues],
+            "slides": [slide.to_dict() for slide in self.slides],
             "created_at": self.created_at,
             "input_mode": self.input_mode,
             "lecture_title": self.lecture_title,
@@ -112,6 +134,9 @@ class LectureRecord:
                         if segment.get("speaker") is not None
                         else None
                     ),
+                    ocr_text=_optional_string(segment.get("ocr_text")),
+                    slide_id=_optional_string(segment.get("slide_id")),
+                    source_frame_ts=_optional_string(segment.get("source_frame_ts")),
                 )
                 for segment in _as_dict_list(payload.get("segments", []))
             ],
@@ -149,6 +174,23 @@ class LectureRecord:
                 )
                 for issue in _as_dict_list(payload.get("issues", []))
             ],
+            slides=[
+                SlideOcrResult(
+                    slide_id=str(slide["slide_id"]),
+                    source_frame_ts=str(slide["source_frame_ts"]),
+                    raw_ocr_text=str(slide.get("raw_ocr_text", "")),
+                    refined_ocr_text=str(slide.get("refined_ocr_text", "")),
+                    confidence=_optional_float(slide.get("confidence")),
+                    provider_metadata=_as_metadata(
+                        slide.get("provider_metadata", {})
+                    ),
+                    frame_width=_optional_int(slide.get("frame_width")),
+                    frame_height=_optional_int(slide.get("frame_height")),
+                    change_score=_optional_float(slide.get("change_score")),
+                    status=str(slide.get("status", "succeeded")),
+                )
+                for slide in _as_dict_list(payload.get("slides", []))
+            ],
             created_at=(
                 str(payload["created_at"])
                 if payload.get("created_at") is not None
@@ -178,3 +220,27 @@ def _optional_string(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_metadata(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items()}

@@ -136,7 +136,7 @@ def _create_chunk(
         text=" ".join(segment.text for segment in segments).strip(),
         segment_ids=[segment.segment_id for segment in segments],
         speaker=_shared_speaker(segments),
-        ocr_text=None,
+        ocr_text=_combined_ocr_text(segments),
     )
 
 
@@ -145,6 +145,19 @@ def _shared_speaker(segments: list[TranscriptSegment]) -> str | None:
     if len(speakers) == 1:
         return next(iter(speakers))
     return None
+
+
+def _combined_ocr_text(segments: list[TranscriptSegment]) -> str | None:
+    seen: set[str] = set()
+    texts: list[str] = []
+    for segment in segments:
+        if not segment.ocr_text:
+            continue
+        if segment.ocr_text in seen:
+            continue
+        seen.add(segment.ocr_text)
+        texts.append(segment.ocr_text)
+    return "\n\n".join(texts) if texts else None
 
 
 def _next_start_index(

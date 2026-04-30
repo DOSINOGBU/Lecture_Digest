@@ -5,6 +5,11 @@ import sys
 from pathlib import Path
 
 from lecturedigest.chunking import chunk_lecture
+from lecturedigest.enrichment import (
+    DEFAULT_FRAME_SAMPLE_INTERVAL_SECONDS,
+    DEFAULT_SLIDE_CHANGE_THRESHOLD,
+    apply_ocr_enrichment,
+)
 from lecturedigest.errors import ErrorDetail, LectureDigestError, ValidationError
 from lecturedigest.folder_ingestion import FolderIngestionResult, register_lecture_folder
 from lecturedigest.ingestion import register_lecture
@@ -29,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
             return _list(repository)
         if args.command == "import-stt":
             return _import_stt(args, repository)
+        if args.command == "import-ocr":
+            return _import_ocr(args, repository)
         if args.command == "chunk":
             return _chunk(args, repository)
     except LectureDigestError as exc:
@@ -69,6 +76,20 @@ def _build_parser() -> argparse.ArgumentParser:
     import_stt_parser = subparsers.add_parser("import-stt")
     import_stt_parser.add_argument("--lecture-id", required=True)
     import_stt_parser.add_argument("--stt-result", required=True, type=Path)
+
+    import_ocr_parser = subparsers.add_parser("import-ocr")
+    import_ocr_parser.add_argument("--lecture-id", required=True)
+    import_ocr_parser.add_argument("--ocr-result", required=True, type=Path)
+    import_ocr_parser.add_argument(
+        "--sample-interval-seconds",
+        type=int,
+        default=DEFAULT_FRAME_SAMPLE_INTERVAL_SECONDS,
+    )
+    import_ocr_parser.add_argument(
+        "--change-threshold",
+        type=float,
+        default=DEFAULT_SLIDE_CHANGE_THRESHOLD,
+    )
 
     subparsers.add_parser("list")
     return parser
@@ -184,6 +205,40 @@ def _import_stt(args: argparse.Namespace, repository: JsonLectureRepository) -> 
     return 0
 
 
+def _import_ocr(args: argparse.Namespace, repository: JsonLectureRepository) -> int:
+    lectures = repository.list_lectures()
+    if not lectures:
+        print("No lectures registered yet. Add one with `register`.")
+        return 0
+
+    print(
+        "[LectureEnrichment] import-ocr start "
+        f"{{ lectureId={args.lecture_id}; "
+        f"sampleIntervalSeconds={args.sample_interval_seconds}; "
+        f"changeThreshold={args.change_threshold} }}"
+    )
+    record = repository.get_lecture(args.lecture_id)
+    if record is None:
+        raise ValidationError(
+            ErrorDetail(
+                code="lecture_not_found",
+                message=f"媛뺤쓽瑜?李얠쓣 ???놁뒿?덈떎: {args.lecture_id}",
+                stage="enrichment",
+                retryable=False,
+            )
+        )
+
+    updated = apply_ocr_enrichment(
+        record,
+        ocr_result_path=args.ocr_result,
+        sample_interval_seconds=args.sample_interval_seconds,
+        change_threshold=args.change_threshold,
+    )
+    repository.save(updated)
+    print(_format_ocr_result(updated))
+    return 0
+
+
 def _format_record(record: LectureRecord) -> str:
     segment_count = len(record.segments)
     chunk_count = len(record.chunks)
@@ -236,6 +291,19 @@ def _format_stt_result(record: LectureRecord) -> str:
         f"{{ lectureId={record.lecture_id}; status={record.status}; "
         f"stage={record.stage}; transcriptSource={record.transcript_source}; "
         f"segments={len(record.segments)} }}"
+    )
+
+
+def _format_ocr_result(record: LectureRecord) -> str:
+    enriched_segments = sum(1 for segment in record.segments if segment.ocr_text)
+    enrichment_issues = sum(
+        1 for issue in record.issues if issue.stage == "enrichment"
+    )
+    return (
+        "[LectureEnrichment] import-ocr success "
+        f"{{ lectureId={record.lecture_id}; status={record.status}; "
+        f"stage={record.stage}; slides={len(record.slides)}; "
+        f"enrichedSegments={enriched_segments}; issues={enrichment_issues} }}"
     )
 
 

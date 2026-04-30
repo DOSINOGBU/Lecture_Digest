@@ -274,6 +274,123 @@ class CliTest(unittest.TestCase):
         self.assertIn("command failed", stderr.getvalue())
         self.assertIn("stt_result_empty", stderr.getvalue())
 
+    def test_import_ocr_outputs_empty_state(self):
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "import-ocr",
+                    "--lecture-id",
+                    "lec_missing",
+                    "--ocr-result",
+                    str(self.root / "ocr.json"),
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("No lectures registered yet", stdout.getvalue())
+
+    def test_import_ocr_outputs_loading_and_success_state(self):
+        video = self.root / "lecture.mp4"
+        subtitle = self.root / "lecture.srt"
+        ocr_result = self.root / "ocr.json"
+        video.write_bytes(b"fake video")
+        subtitle.write_text(
+            "1\n00:00:00,000 --> 00:00:03,000\none\n",
+            encoding="utf-8",
+        )
+        _write_ocr_result(ocr_result)
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register",
+                    "--video",
+                    str(video),
+                    "--subtitle",
+                    str(subtitle),
+                    "--title",
+                    "Intro",
+                    "--instructor",
+                    "Teacher",
+                    "--category",
+                    "Coding",
+                ]
+            )
+        lecture_id = _read_lecture_id(self.store)
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "import-ocr",
+                    "--lecture-id",
+                    lecture_id,
+                    "--ocr-result",
+                    str(ocr_result),
+                ]
+            )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("import-ocr start", output)
+        self.assertIn("import-ocr success", output)
+        self.assertIn("slides=1", output)
+        self.assertIn("enrichedSegments=1", output)
+
+    def test_import_ocr_outputs_error_state(self):
+        video = self.root / "lecture.mp4"
+        subtitle = self.root / "lecture.srt"
+        video.write_bytes(b"fake video")
+        subtitle.write_text(
+            "1\n00:00:00,000 --> 00:00:03,000\none\n",
+            encoding="utf-8",
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(
+                [
+                    "--store",
+                    str(self.store),
+                    "register",
+                    "--video",
+                    str(video),
+                    "--subtitle",
+                    str(subtitle),
+                    "--title",
+                    "Intro",
+                    "--instructor",
+                    "Teacher",
+                    "--category",
+                    "Coding",
+                ]
+            )
+        lecture_id = _read_lecture_id(self.store)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "import-ocr",
+                    "--lecture-id",
+                    lecture_id,
+                    "--ocr-result",
+                    str(self.root / "missing.json"),
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("command failed", stderr.getvalue())
+        self.assertIn("ocr_result_not_found", stderr.getvalue())
+
     def test_chunk_outputs_loading_and_success_state(self):
         video = self.root / "lecture.mp4"
         subtitle = self.root / "lecture.srt"
@@ -366,6 +483,36 @@ def _read_lecture_id(store: Path) -> str:
 
     payload = json.loads(store.read_text(encoding="utf-8"))
     return str(payload[0]["lecture_id"])
+
+
+def _write_ocr_result(path: Path) -> None:
+    import json
+
+    path.write_text(
+        json.dumps(
+            {
+                "provider_metadata": {
+                    "provider": "openai_vision",
+                    "model": "vision-capable-model",
+                    "prompt_version": "ocr-v1",
+                    "detail": "original",
+                    "status": "succeeded",
+                },
+                "frames": [
+                    {
+                        "source_frame_ts": "00:00:00,500",
+                        "change_score": 1.0,
+                        "raw_ocr_text": "Raw",
+                        "refined_ocr_text": "Refined",
+                        "confidence": 0.95,
+                        "frame_width": 1920,
+                        "frame_height": 1080,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

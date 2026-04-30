@@ -31,3 +31,7 @@ class TranscriptionError(LectureDigestError):
 
 class IndexingError(LectureDigestError):
     pass
+
+
+class EnrichmentError(LectureDigestError):
+    pass
