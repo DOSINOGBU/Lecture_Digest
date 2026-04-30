@@ -13,7 +13,11 @@ from lecturedigest.errors import (
 )
 from lecturedigest.models import LectureRecord, TranscriptSegment
 from lecturedigest.subtitles import parse_subtitle_file
-from lecturedigest.timecode import normalize_timestamp, timestamp_to_seconds
+from lecturedigest.timecode import (
+    normalize_timestamp,
+    seconds_to_timestamp,
+    timestamp_to_seconds,
+)
 
 SUPPORTED_STT_RESULT_EXTENSIONS = {".srt", ".vtt", ".json"}
 DEFAULT_STT_MODEL = "gpt-4o-transcribe-diarize"
@@ -217,7 +221,7 @@ def _timestamp_from_segment_value(value: object) -> str:
     if isinstance(value, (int, float)):
         if value < 0:
             raise _invalid_json_timestamp(value)
-        return _seconds_to_timestamp(float(value))
+        return seconds_to_timestamp(float(value))
     if value is None:
         raise _invalid_json_timestamp(value)
     try:
@@ -235,17 +239,6 @@ def _invalid_json_timestamp(value: object) -> TranscriptionError:
             retryable=False,
         )
     )
-
-
-def _seconds_to_timestamp(seconds_value: float) -> str:
-    total_milliseconds = round(seconds_value * 1000)
-    milliseconds = total_milliseconds % 1000
-    total_seconds = total_milliseconds // 1000
-    seconds = total_seconds % 60
-    total_minutes = total_seconds // 60
-    minutes = total_minutes % 60
-    hours = total_minutes // 60
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
 
 
 def _transcript_metadata(payload: dict[str, object]) -> dict[str, object]:

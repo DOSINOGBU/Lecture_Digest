@@ -34,3 +34,14 @@ def timestamp_to_seconds(value: str) -> float:
         milliseconds=int(milliseconds),
     )
     return delta.total_seconds()
+
+
+def seconds_to_timestamp(seconds_value: float) -> str:
+    total_milliseconds = round(seconds_value * 1000)
+    milliseconds = total_milliseconds % 1000
+    total_seconds = total_milliseconds // 1000
+    seconds = total_seconds % 60
+    total_minutes = total_seconds // 60
+    minutes = total_minutes % 60
+    hours = total_minutes // 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"

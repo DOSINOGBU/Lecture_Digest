@@ -6,6 +6,9 @@ from pathlib import Path
 from unittest import mock
 
 from lecturedigest.cli import main
+from lecturedigest.media_preflight import MediaPreflightResult
+from lecturedigest.media_transcription import LargeOpenAITranscriptionResult
+from lecturedigest.openai_transcription import MAX_TRANSCRIPTION_UPLOAD_BYTES
 
 
 class CliTest(unittest.TestCase):
@@ -227,17 +230,43 @@ class CliTest(unittest.TestCase):
         self.assertEqual(payload["transcript_source"], "stt_pending")
         self.assertEqual(payload["segments"], [])
 
+    def test_transcribe_large_dry_run_outputs_media_preflight(self):
+        video = self.root / "lecture.mp4"
+        with video.open("wb") as handle:
+            handle.truncate(MAX_TRANSCRIPTION_UPLOAD_BYTES + 1)
+        large_lecture_id = self._register_video(video)
+
+        with mock.patch(
+            "lecturedigest.transcribe_cli.transcribe_large_lecture_with_openai",
+            return_value=_large_dry_run_result(video),
+        ):
+            exit_code, output = self._run_stdout(
+                [
+                    "transcribe",
+                    "--lecture-id",
+                    large_lecture_id,
+                    "--dry-run",
+                ]
+            )
+
+        payload = _read_lecture_payload(self.store)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("transcribe start", output)
+        self.assertIn("preflight success", output)
+        self.assertIn("requiresSplit=True", output)
+        self.assertEqual(payload["segments"], [])
+
     def test_transcribe_outputs_error_when_api_key_is_missing(self):
         video = self.root / "lecture.mp4"
         video.write_bytes(b"fake video")
-        lecture_id = self._register_video(video)
+        missing_key_lecture_id = self._register_video(video)
 
         with mock.patch.dict("os.environ", {}, clear=True):
             exit_code, stdout, stderr = self._run_output(
                 [
                     "transcribe",
                     "--lecture-id",
-                    lecture_id,
+                    missing_key_lecture_id,
                 ]
             )
 
@@ -397,6 +426,39 @@ def _read_lecture_payload(store: Path) -> dict[str, object]:
 
     payload = json.loads(store.read_text(encoding="utf-8"))
     return payload[0]
+
+
+def _large_dry_run_result(video: Path) -> LargeOpenAITranscriptionResult:
+    media_preflight = MediaPreflightResult(
+        source_path=video,
+        file_size_bytes=MAX_TRANSCRIPTION_UPLOAD_BYTES + 1,
+        duration_seconds=650.0,
+        has_audio=True,
+        has_video=True,
+        width=1920,
+        height=1080,
+        video_codec="h264",
+        audio_codec="aac",
+        warnings=[],
+    )
+    return LargeOpenAITranscriptionResult(
+        record=None,
+        media_preflight=media_preflight,
+        chunk_plan=[
+            {
+                "chunk_id": "chunk-000001",
+                "offset_seconds": 0.0,
+                "duration_seconds": 600.0,
+            },
+            {
+                "chunk_id": "chunk-000002",
+                "offset_seconds": 600.0,
+                "duration_seconds": 50.0,
+            },
+        ],
+        client_results=[],
+        dry_run=True,
+    )
 
 
 def _write_ocr_result(path: Path) -> None:

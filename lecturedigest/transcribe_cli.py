@@ -3,6 +3,11 @@ from __future__ import annotations
 import argparse
 
 from lecturedigest.errors import ErrorDetail, TranscriptionError, ValidationError
+from lecturedigest.media_transcription import (
+    format_large_transcription_dry_run,
+    should_route_to_large_media,
+    transcribe_large_lecture_with_openai,
+)
 from lecturedigest.openai_transcription import (
     DEFAULT_STT_CHUNKING_STRATEGY,
     format_transcription_dry_run,
@@ -50,19 +55,34 @@ def transcribe_command(
             )
         )
 
-    result = transcribe_lecture_with_openai(
-        record,
-        model=args.model,
-        response_format=args.response_format,
-        chunking_strategy=args.chunking_strategy,
-        dry_run=args.dry_run,
-    )
-    if args.dry_run:
-        print(format_transcription_dry_run(result))
-        return 0
+    try:
+        result = transcribe_lecture_with_openai(
+            record,
+            model=args.model,
+            response_format=args.response_format,
+            chunking_strategy=args.chunking_strategy,
+            dry_run=args.dry_run,
+        )
+        if args.dry_run:
+            print(format_transcription_dry_run(result))
+            return 0
+    except ValidationError as exc:
+        if not should_route_to_large_media(exc):
+            raise
+        large_result = transcribe_large_lecture_with_openai(
+            record,
+            model=args.model,
+            response_format=args.response_format,
+            chunking_strategy=args.chunking_strategy,
+            dry_run=args.dry_run,
+        )
+        if args.dry_run:
+            print(format_large_transcription_dry_run(large_result))
+            return 0
+        result = large_result
 
     repository.save(result.record)
-    if not result.client_result.succeeded:
+    if not _transcription_succeeded(result):
         issue = result.record.issues[-1]
         raise TranscriptionError(
             ErrorDetail(
@@ -81,3 +101,9 @@ def transcribe_command(
         f"segments={len(result.record.segments)} }}"
     )
     return 0
+
+
+def _transcription_succeeded(result) -> bool:
+    if hasattr(result, "client_result"):
+        return result.client_result.succeeded
+    return all(item.succeeded for item in result.client_results)
