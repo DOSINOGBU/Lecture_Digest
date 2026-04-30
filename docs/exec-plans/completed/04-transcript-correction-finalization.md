@@ -30,12 +30,12 @@
 
 ## Steps
 
-- [ ] STT API 입력, 출력, 실행 metadata를 정의한다.
-- [ ] diarized segment를 기존 transcript segment로 변환하는 규칙을 정의한다.
-- [ ] 교정 전 보호 대상과 교정 후보 탐지 기준을 정한다.
-- [ ] 고신뢰 자동 적용 기준과 낮은 confidence 보류 정책을 정한다.
-- [ ] `correction_log` 필드와 상태 전이를 정의한다.
-- [ ] 교정 완료 transcript의 저장 상태와 downstream 입력 조건을 정한다.
+- [x] STT API 입력, 출력, 실행 metadata를 정의한다.
+- [x] diarized segment를 기존 transcript segment로 변환하는 규칙을 정의한다.
+- [x] 교정 전 보호 대상과 교정 후보 탐지 기준을 정한다.
+- [x] 고신뢰 자동 적용 기준과 낮은 confidence 보류 정책을 정한다.
+- [x] `correction_log` 필드와 상태 전이를 정의한다.
+- [x] 교정 완료 transcript의 저장 상태와 downstream 입력 조건을 정한다.
 
 ## Validation
 
@@ -53,4 +53,4 @@
 
 ## Result
 
-진행 전입니다.
+`import-stt`가 `.json` STT 결과를 받아 `gpt-4o-transcribe-diarize`/`diarized_json` metadata와 speaker/start/end 정보를 `TranscriptSegment`로 보존하도록 확장했습니다. `finalize-transcript` CLI와 `finalize_transcript` use case를 추가해 subtitle/STT 양쪽 segment에 같은 correction result JSON을 적용합니다. 고신뢰 correction은 자동 적용하고, 낮은 confidence, 실패 상태, 빈 correction, 보호 토큰 변경, segment mapping 실패는 자동 적용하지 않고 `correction_log`와 `correction` issue로 남깁니다. 완료된 transcript는 `transcript_finalized`/`correction` 상태가 되고, downstream chunk/RAG가 이전 텍스트를 재사용하지 않도록 chunks를 비웁니다. 실제 OpenAI 네트워크 호출은 아직 넣지 않고 API 결과 import와 metadata 보존 경계까지만 구현했습니다.
