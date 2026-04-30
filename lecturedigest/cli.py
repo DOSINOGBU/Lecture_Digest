@@ -33,6 +33,7 @@ from lecturedigest.rag_cli import (
     summarize_command,
 )
 from lecturedigest.storage import JsonLectureRepository
+from lecturedigest.transcribe_cli import add_transcribe_parser, transcribe_command
 from lecturedigest.transcription import apply_stt_result
 from lecturedigest.transcript_cli import finalize_transcript_command
 
@@ -51,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
             return _register_folder(args, repository)
         if args.command == "list":
             return _list(repository)
+        if args.command == "transcribe":
+            return transcribe_command(args, repository)
         if args.command == "import-stt":
             return _import_stt(args, repository)
         if args.command == "import-ocr":
@@ -115,6 +118,8 @@ def _build_parser() -> argparse.ArgumentParser:
     import_stt_parser = subparsers.add_parser("import-stt")
     import_stt_parser.add_argument("--lecture-id", required=True)
     import_stt_parser.add_argument("--stt-result", required=True, type=Path)
+
+    add_transcribe_parser(subparsers)
 
     import_ocr_parser = subparsers.add_parser("import-ocr")
     import_ocr_parser.add_argument("--lecture-id", required=True)

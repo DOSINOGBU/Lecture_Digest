@@ -3,6 +3,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from lecturedigest.cli import main
 
@@ -191,6 +192,60 @@ class CliTest(unittest.TestCase):
         self.assertIn("command failed", stderr)
         self.assertIn("stt_result_empty", stderr)
 
+    def test_transcribe_outputs_empty_state(self):
+        exit_code, output = self._run_stdout(
+            [
+                "transcribe",
+                "--lecture-id",
+                "lec_missing",
+            ]
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("No lectures registered yet", output)
+
+    def test_transcribe_dry_run_outputs_loading_without_updating_store(self):
+        video = self.root / "lecture.mp4"
+        video.write_bytes(b"fake video")
+        lecture_id = self._register_video(video)
+
+        exit_code, output = self._run_stdout(
+            [
+                "transcribe",
+                "--lecture-id",
+                lecture_id,
+                "--dry-run",
+            ]
+        )
+
+        payload = _read_lecture_payload(self.store)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("transcribe start", output)
+        self.assertIn("transcribe dry-run", output)
+        self.assertIn("willUpload=false", output)
+        self.assertEqual(payload["status"], "stt_required")
+        self.assertEqual(payload["transcript_source"], "stt_pending")
+        self.assertEqual(payload["segments"], [])
+
+    def test_transcribe_outputs_error_when_api_key_is_missing(self):
+        video = self.root / "lecture.mp4"
+        video.write_bytes(b"fake video")
+        lecture_id = self._register_video(video)
+
+        with mock.patch.dict("os.environ", {}, clear=True):
+            exit_code, stdout, stderr = self._run_output(
+                [
+                    "transcribe",
+                    "--lecture-id",
+                    lecture_id,
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("transcribe start", stdout)
+        self.assertIn("command failed", stderr)
+        self.assertIn("openai_api_key_missing", stderr)
+
     def test_import_ocr_outputs_empty_state(self):
         exit_code, output = self._run_stdout(
             [
@@ -335,6 +390,13 @@ def _read_lecture_id(store: Path) -> str:
 
     payload = json.loads(store.read_text(encoding="utf-8"))
     return str(payload[0]["lecture_id"])
+
+
+def _read_lecture_payload(store: Path) -> dict[str, object]:
+    import json
+
+    payload = json.loads(store.read_text(encoding="utf-8"))
+    return payload[0]
 
 
 def _write_ocr_result(path: Path) -> None:

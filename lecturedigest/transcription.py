@@ -63,6 +63,68 @@ def parse_stt_result_file(path: Path) -> list[TranscriptSegment]:
     return segments
 
 
+def parse_diarized_json_payload(
+    payload: dict[str, object],
+) -> tuple[list[TranscriptSegment], dict[str, object]]:
+    raw_segments = payload.get("segments", payload.get("diarized_segments", []))
+    if not isinstance(raw_segments, list):
+        raise TranscriptionError(
+            ErrorDetail(
+                code="stt_segments_invalid",
+                message="STT result JSON `segments` must be a list.",
+                stage="transcription",
+                retryable=False,
+            )
+        )
+
+    segments = [
+        _json_segment_to_transcript(item, index)
+        for index, item in enumerate(raw_segments, start=1)
+        if isinstance(item, dict)
+    ]
+    if not segments:
+        raise TranscriptionError(
+            ErrorDetail(
+                code="stt_result_empty",
+                message="STT result JSON did not contain timestamped segments.",
+                stage="transcription",
+                retryable=False,
+            )
+        )
+    return segments, _transcript_metadata(payload)
+
+
+def parse_diarized_json_bytes(
+    data: bytes,
+) -> tuple[list[TranscriptSegment], dict[str, object]]:
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        message = (
+            exc.msg
+            if isinstance(exc, json.JSONDecodeError)
+            else "response is not valid UTF-8"
+        )
+        raise TranscriptionError(
+            ErrorDetail(
+                code="stt_result_invalid_json",
+                message=f"STT result JSON could not be parsed: {message}",
+                stage="transcription",
+                retryable=False,
+            )
+        ) from exc
+    if not isinstance(payload, dict):
+        raise TranscriptionError(
+            ErrorDetail(
+                code="stt_result_invalid_schema",
+                message="STT result JSON must be an object.",
+                stage="transcription",
+                retryable=False,
+            )
+        )
+    return parse_diarized_json_payload(payload)
+
+
 def _parse_stt_result_with_metadata(
     path: Path,
 ) -> tuple[list[TranscriptSegment], dict[str, object]]:
@@ -110,32 +172,7 @@ def _parse_diarized_json_result(
             )
         )
 
-    raw_segments = payload.get("segments", payload.get("diarized_segments", []))
-    if not isinstance(raw_segments, list):
-        raise TranscriptionError(
-            ErrorDetail(
-                code="stt_segments_invalid",
-                message="STT result JSON `segments` must be a list.",
-                stage="transcription",
-                retryable=False,
-            )
-        )
-
-    segments = [
-        _json_segment_to_transcript(item, index)
-        for index, item in enumerate(raw_segments, start=1)
-        if isinstance(item, dict)
-    ]
-    if not segments:
-        raise TranscriptionError(
-            ErrorDetail(
-                code="stt_result_empty",
-                message="STT result JSON did not contain timestamped segments.",
-                stage="transcription",
-                retryable=False,
-            )
-        )
-    return segments, _transcript_metadata(payload)
+    return parse_diarized_json_payload(payload)
 
 
 def _json_segment_to_transcript(
