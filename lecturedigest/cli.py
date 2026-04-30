@@ -32,7 +32,13 @@ from lecturedigest.note_cli import (
 )
 from lecturedigest.ocr_cli import add_ocr_parser, ocr_command
 from lecturedigest.openai_correction import DEFAULT_CORRECTION_BATCH_SIZE
-from lecturedigest.quiz_cli import add_quiz_parsers, generate_quizzes_command
+from lecturedigest.quiz_cli import (
+    add_quiz_parsers,
+    generate_quizzes_command,
+    grade_quiz_session_command,
+    start_quiz_session_command,
+    submit_quiz_answer_command,
+)
 from lecturedigest.rag_cli import (
     add_rag_parsers,
     ask_command,
@@ -89,6 +95,12 @@ def main(argv: list[str] | None = None) -> int:
             return export_anki_command(args, repository)
         if args.command == "generate-quizzes":
             return generate_quizzes_command(args, repository)
+        if args.command == "start-quiz-session":
+            return start_quiz_session_command(args, repository)
+        if args.command == "submit-quiz-answer":
+            return submit_quiz_answer_command(args, repository)
+        if args.command == "grade-quiz-session":
+            return grade_quiz_session_command(args, repository)
     except LectureDigestError as exc:
         _print_error(exc)
         return 1
