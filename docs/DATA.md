@@ -1,5 +1,13 @@
 # Data
 
+## External API Metadata
+
+- 외부 API 호출 결과에는 provider, endpoint/use case, model, prompt_version, source artifact id, input size, duration_ms, status, retryable 여부를 남깁니다.
+- 비용 추정이 가능한 경우 estimated_cost와 토큰/초/프레임 단위 사용량을 함께 기록합니다.
+- API 키, 원문 secret, 결제 정보, 전체 로컬 경로는 데이터 모델과 로그에 저장하지 않습니다.
+- 원본 OCR은 보관용으로만 두고, 노트/RAG에는 정제 OCR과 교정 완료 자막만 반영합니다.
+- model 또는 prompt가 바뀌면 관련 산출물은 stale로 표시하되 자동 재생성하지 않습니다.
+
 LectureDigest의 데이터는 원본 강의 자료, 대본, OCR, 학습 노트, 교정 로그처럼 되돌리기 어렵고 민감한 개인 학습 자료를 포함합니다. 데이터 변경은 코드 변경보다 되돌리기 어렵기 때문에 이 문서를 우선합니다.
 
 ## Core Entities

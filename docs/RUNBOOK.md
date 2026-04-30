@@ -1,5 +1,12 @@
 # Runbook
 
+## BYOK And Cost Incident Notes
+
+- 비용 급증이 의심되면 외부 API 호출을 중지하고 최근 작업의 provider, model, input size, duration, retry count를 확인합니다.
+- 키 노출이 의심되면 제공자 콘솔에서 즉시 키를 폐기하고 새 키를 발급한 뒤 로컬 환경 변수를 교체합니다.
+- 반복 실패로 비용이 증가하면 자동 재시도는 중단하고 해당 산출물을 failed 또는 review_required로 남깁니다.
+- 사용자가 수동 재생성을 요청하기 전까지 stale 산출물을 자동으로 재처리하지 않습니다.
+
 장애나 운영 이슈가 발생했을 때 바로 실행할 대응 절차를 기록합니다. 현재는 구현 전 하네스 단계이므로 구체 명령은 스택 확정 후 채웁니다.
 
 ## First Response
