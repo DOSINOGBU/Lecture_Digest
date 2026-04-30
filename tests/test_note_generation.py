@@ -30,9 +30,14 @@ class NoteGenerationTest(unittest.TestCase):
         self.assertIn("## 핵심 용어 정리", markdown)
         self.assertIn("## 복습 질문", markdown)
         self.assertIn("## 최종 정리", markdown)
-        self.assertIn("source: seg-1..seg-2", markdown)
+        self.assertNotIn("(source:", markdown)
+        self.assertNotIn("seg-1", markdown)
+        self.assertEqual(
+            updated.note_candidates[0]["sections"][0]["segment_ids"],
+            ["seg-1", "seg-2"],
+        )
         self.assertIn("React DOM", markdown)
-        self.assertEqual(updated.note_candidates[0]["content_profile"]["strategy"], "compact")
+        self.assertEqual(updated.note_candidates[0]["content_profile"]["strategy"], "tiny")
         self.assertIn(
             "source_insufficient_for_full_note",
             updated.note_candidates[0]["validation"]["quality_flags"],

@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from lecturedigest.note_depth import evaluate_body_depth, visible_source_artifacts
+from lecturedigest.note_difficulty import validate_difficulty_explanations
 from lecturedigest.note_profile import NoteContentProfile
 
 FIXED_SECTION_TITLES = {
@@ -84,6 +86,7 @@ def validate_prd_candidate(
     sections: list[dict[str, object]],
     source_units: list[Any],
     content_profile: NoteContentProfile,
+    generator_notes: dict[str, object] | None = None,
 ) -> dict[str, object]:
     source_length = max(1, len(" ".join(str(getattr(unit, "text", "")) for unit in source_units)))
     ratio = round(len(markdown) / source_length, 3)
@@ -110,8 +113,9 @@ def validate_prd_candidate(
         failed.append("required_section_empty")
     if unmapped:
         failed.append("source_mapping_missing")
-    if "(source:" not in markdown:
-        failed.append("citation_text_missing")
+    source_artifacts = visible_source_artifacts(markdown)
+    if source_artifacts:
+        failed.append("visible_source_artifacts")
 
     counts = {
         "learning_goals": _bullet_count(_section_text(sections, "learning_goals")),
@@ -127,13 +131,13 @@ def validate_prd_candidate(
         minimum = content_profile.target_counts[count_key][0]
         if counts[count_key] < minimum:
             quality_flags.append(flag)
-            if content_profile.strategy != "compact":
+            if not content_profile.source_insufficient_for_full_note:
                 failed.append(flag)
             else:
                 warnings.append(flag)
     if counts["core_topics"] < content_profile.target_counts["core_topics"][0]:
         quality_flags.append("insufficient_core_topics")
-        if content_profile.strategy != "compact":
+        if not content_profile.source_insufficient_for_full_note:
             failed.append("insufficient_core_topics")
         else:
             warnings.append("insufficient_core_topics")
@@ -149,6 +153,27 @@ def validate_prd_candidate(
     if ratio < 0.1:
         warnings.append("note_may_be_too_short_for_golden_review")
 
+    body_depth = evaluate_body_depth(
+        markdown=markdown,
+        sections=sections,
+        source_units=source_units,
+        content_profile=content_profile,
+    )
+    failed.extend(body_depth["failed_rules"])
+    warnings.extend(body_depth["warnings"])
+    quality_flags.extend(body_depth["quality_flags"])
+
+    difficulty = validate_difficulty_explanations(
+        markdown=markdown,
+        sections=sections,
+        source_units=source_units,
+        content_profile=content_profile,
+        generator_notes=generator_notes,
+    )
+    failed.extend(difficulty["failed_rules"])
+    warnings.extend(difficulty["warnings"])
+    quality_flags.extend(difficulty["quality_flags"])
+
     return {
         "status": "flagged" if failed else "review_required",
         "length_ratio": ratio,
@@ -159,7 +184,10 @@ def validate_prd_candidate(
         "unmapped_sections": unmapped,
         "missing_sections": missing_sections,
         "empty_sections": empty_sections,
+        "visible_source_artifacts": source_artifacts,
         "content_counts": counts,
+        "body_depth": body_depth,
+        "difficulty_explanations": difficulty,
         "content_profile": content_profile.to_dict(),
         "human_review_required": True,
     }

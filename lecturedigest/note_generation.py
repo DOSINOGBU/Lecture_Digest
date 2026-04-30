@@ -13,7 +13,7 @@ from lecturedigest.note_markdown import (
 from lecturedigest.note_profile import build_content_profile
 
 DEFAULT_NOTE_MODEL = "local-scriptdigest-v1"
-DEFAULT_NOTE_PROMPT_VERSION = "markdown-note-prd-v2"
+DEFAULT_NOTE_PROMPT_VERSION = "markdown-note-prd-v3"
 DEFAULT_NOTE_TONE = "formal"
 NOTE_CANDIDATE_COUNT = 3
 ALLOWED_TONES = {"formal", "casual", "keep_original"}

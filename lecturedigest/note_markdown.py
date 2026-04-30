@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from lecturedigest.models import LectureRecord, TranscriptSegment
+from lecturedigest.note_difficulty import (
+    beginner_explanation_for,
+    detect_difficult_concepts,
+)
 from lecturedigest.note_prd import (
     CORE_TOPIC_PREFIX,
     default_section_title,
@@ -61,11 +65,15 @@ def build_note_candidate(
     sections = _section_rows(record, source_units, variant_index)
     candidate_id = _candidate_id(record, source_units, prompt_version, variant_index)
     markdown = markdown_from_sections(title=record.title, sections=sections)
+    generator_notes = {
+        "difficulty_explanations": _local_difficulty_explanations(source_units, sections)
+    }
     validation = validate_prd_candidate(
         markdown=markdown,
         sections=sections,
         source_units=source_units,
         content_profile=content_profile,
+        generator_notes=generator_notes,
     )
     return {
         "candidate_id": candidate_id,
@@ -77,6 +85,7 @@ def build_note_candidate(
         "created_at": datetime.now(UTC).isoformat(),
         "markdown": markdown,
         "sections": sections,
+        "generator_notes": generator_notes,
         "source_segment_ids": _union_segment_ids(sections),
         "content_profile": content_profile.to_dict(),
         "validation": validation,
@@ -228,7 +237,7 @@ def _one_line_summary(
         selected = sentences[-1:] if sentences else []
     else:
         selected = sentences[:2]
-    return [f"{_with_citation(sentence, source_units)}" for sentence in selected[:3]]
+    return [_snippet(sentence, 180) for sentence in selected[:3]]
 
 
 def _learning_goal_lines(
@@ -240,7 +249,7 @@ def _learning_goal_lines(
     count = max(1, count)
     verbs = ["설명할 수 있다", "구분할 수 있다", "판단할 수 있다", "이해한다"]
     return [
-        f"- {concepts[index % len(concepts)]}의 역할을 {verbs[index % len(verbs)]}. {_citation(source_units)}"
+        f"- {concepts[index % len(concepts)]}의 역할을 {verbs[index % len(verbs)]}."
         for index in range(count)
     ]
 
@@ -253,9 +262,12 @@ def _topic_lines(
 ) -> list[str]:
     evidence = _representative_text(source_units, topic_index)
     lines = [
-        f"{concept}은 이 구간에서 다루는 핵심 주제입니다. {_with_citation(evidence, source_units)}",
+        f"{concept}은 이 구간에서 다루는 핵심 주제입니다. {_snippet(evidence, 180)}",
         "강의 흐름을 유지하되, 반복되는 구어체 표현은 복습하기 쉬운 문장으로 정리합니다.",
     ]
+    easy_explanation = _easy_explanation_for_units(source_units)
+    if easy_explanation:
+        lines.extend(["", easy_explanation])
     if content_profile.has_process_flow:
         lines.extend(
             [
@@ -288,13 +300,37 @@ def _topic_lines(
     return lines
 
 
+def _easy_explanation_for_units(source_units: list[NoteSourceUnit]) -> str:
+    concepts = detect_difficult_concepts(source_units, limit=1)
+    if not concepts:
+        return ""
+    return beginner_explanation_for(str(concepts[0].get("term") or "핵심 개념"))
+
+
+def _local_difficulty_explanations(
+    source_units: list[NoteSourceUnit],
+    sections: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    explanations = []
+    for item in detect_difficult_concepts(source_units, sections=sections):
+        term = str(item.get("term") or "")
+        explanations.append(
+            {
+                **item,
+                "plain_explanation": beginner_explanation_for(term),
+                "analogy_used": False,
+            }
+        )
+    return explanations
+
+
 def _practical_lines(
     concepts: list[str],
     source_units: list[NoteSourceUnit],
     content_profile,
 ) -> list[str]:
     lines = [
-        f"- {concepts[0]}를 원본 타임스탬프와 함께 다시 확인한다. {_citation(source_units)}",
+        f"- {concepts[0]}를 원본 출처와 연결된 내부 메타데이터로 다시 확인한다.",
         "- 출처가 확인되지 않는 내용은 학습 노트나 카드로 확정하지 않는다.",
     ]
     if content_profile.strategy in {"expanded", "chaptered"}:
@@ -310,7 +346,7 @@ def _key_term_lines(
     limit = min(len(concepts), content_profile.target_counts["key_terms"][1])
     rows = ["| 용어 | 의미 |", "| --- | --- |"]
     for concept in concepts[: max(1, limit)]:
-        rows.append(f"| {concept} | 강의 원문에서 확인되는 핵심 표현입니다. {_citation(source_units)} |")
+        rows.append(f"| {concept} | 강의 원문에서 확인되는 핵심 표현입니다. |")
     return rows
 
 
@@ -321,7 +357,7 @@ def _review_question_lines(
 ) -> list[str]:
     limit = min(len(concepts), content_profile.target_counts["review_questions"][1])
     return [
-        f"{index}. {concept}이 이 강의 흐름에서 왜 중요한지 설명할 수 있는가? {_citation(source_units)}"
+        f"{index}. {concept}이 이 강의 흐름에서 왜 중요한지 설명할 수 있는가?"
         for index, concept in enumerate(concepts[: max(1, limit)], start=1)
     ]
 
@@ -333,10 +369,10 @@ def _final_summary(
     first = _snippet(source_units[0].text, 180)
     last = _snippet(source_units[-1].text, 180)
     return [
-        f"이 강의는 {first}에서 출발해 핵심 개념을 학습 흐름에 맞게 정리한다. {_citation(source_units)}",
+        f"이 강의는 {first}에서 출발해 핵심 개념을 학습 흐름에 맞게 정리한다.",
         (
             f"마지막으로 {last}까지 이어지는 내용을 복습 질문과 용어 정리로 다시 확인한다. "
-            f"생성 전략은 `{content_profile.strategy}`이다. {_citation(source_units)}"
+            f"생성 전략은 `{content_profile.strategy}`이다."
         ),
     ]
 
@@ -383,21 +419,6 @@ def _representative_text(
 ) -> str:
     index = min(len(source_units) - 1, max(0, variant_index - 1))
     return _snippet(source_units[index].text, 180)
-
-
-def _with_citation(text: str, source_units: list[NoteSourceUnit]) -> str:
-    return f"{_snippet(text, 180)} {_citation(source_units)}"
-
-
-def _citation(source_units: list[NoteSourceUnit]) -> str:
-    first = source_units[0]
-    last = source_units[-1]
-    if first.segment_id == last.segment_id:
-        return f"(source: {first.segment_id} @ {first.start_ts})"
-    return (
-        f"(source: {first.segment_id}..{last.segment_id} "
-        f"@ {first.start_ts}-{last.end_ts})"
-    )
 
 
 def _time_range(source_units: list[NoteSourceUnit]) -> tuple[str | None, str | None]:

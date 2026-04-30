@@ -15,6 +15,7 @@ from lecturedigest.note_generation import (
 from lecturedigest.openai_notes import (
     DEFAULT_OPENAI_NOTE_MODEL,
     DEFAULT_OPENAI_NOTE_PROMPT_VERSION,
+    DEFAULT_OPENAI_NOTE_TIMEOUT_SECONDS,
     format_openai_note_dry_run,
     generate_note_candidates_with_openai,
 )
@@ -37,7 +38,9 @@ def generate_notes_command(
         "[LectureNotes] generate-notes start "
         f"{{ lectureId={args.lecture_id}; provider={provider}; tone={args.tone}; "
         f"model={model}; promptVersion={prompt_version}; dryRun={args.dry_run}; "
-        f"repair={args.repair} }}"
+        f"repair={args.repair}; variant={args.variant or 'all'}; "
+        f"candidateLimit={args.candidate_limit or 'default'}; resume={args.resume}; "
+        f"timeBudgetSeconds={args.time_budget_seconds or 'none'} }}"
     )
     if args.repair and not args.openai:
         raise ValidationError(
@@ -49,6 +52,12 @@ def generate_notes_command(
             )
         )
     if args.openai:
+        if args.repair and args.max_repair_attempts > 1:
+            print(
+                "[LectureNotes] repair call warning "
+                f"{{ maxRepairAttempts={args.max_repair_attempts}; "
+                "use --candidate-limit 1 or --time-budget-seconds for safer runs }}"
+            )
         result = generate_note_candidates_with_openai(
             record,
             tone=args.tone,
@@ -57,6 +66,12 @@ def generate_notes_command(
             dry_run=args.dry_run,
             repair=args.repair,
             max_repair_attempts=args.max_repair_attempts,
+            timeout_seconds=args.openai_timeout_seconds,
+            variants=[args.variant] if args.variant else None,
+            candidate_limit=args.candidate_limit,
+            resume=args.resume,
+            time_budget_seconds=args.time_budget_seconds,
+            checkpoint=_note_checkpoint(args, repository) if not args.dry_run else None,
         )
         if args.dry_run:
             print(format_openai_note_dry_run(result))
@@ -134,6 +149,18 @@ def add_note_parsers(subparsers: argparse._SubParsersAction) -> None:
     generate_parser.add_argument("--dry-run", action="store_true")
     generate_parser.add_argument("--repair", action="store_true")
     generate_parser.add_argument("--max-repair-attempts", type=int, default=1)
+    generate_parser.add_argument(
+        "--variant",
+        choices=["balanced", "concept_focused", "action_focused"],
+    )
+    generate_parser.add_argument("--candidate-limit", type=int)
+    generate_parser.add_argument("--resume", action="store_true")
+    generate_parser.add_argument("--time-budget-seconds", type=float)
+    generate_parser.add_argument(
+        "--openai-timeout-seconds",
+        type=float,
+        default=DEFAULT_OPENAI_NOTE_TIMEOUT_SECONDS,
+    )
     generate_parser.add_argument("--export-preview-dir", type=Path)
 
     approve_parser = subparsers.add_parser("approve-note")
@@ -176,6 +203,15 @@ def format_note_generation_result(record, *, preview_paths=None) -> str:
     for path in preview_paths:
         lines.append(f"- preview={path}")
     return "\n".join(lines)
+
+
+def _note_checkpoint(args: argparse.Namespace, repository: JsonLectureRepository):
+    def save_partial(record) -> None:
+        repository.save(record)
+        if args.export_preview_dir:
+            export_note_previews(record, args.export_preview_dir)
+
+    return save_partial
 
 
 def format_note_approval_result(record) -> str:

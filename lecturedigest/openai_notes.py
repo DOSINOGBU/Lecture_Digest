@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from lecturedigest.errors import ErrorDetail, NoteGenerationError
 from lecturedigest.models import LectureRecord
@@ -8,6 +10,14 @@ from lecturedigest.note_markdown import NoteSourceUnit, source_hash, source_unit
 from lecturedigest.note_profile import build_content_profile
 from lecturedigest.openai_client import OpenAIClient, format_dry_run_result
 from lecturedigest.openai_note_parse import parse_note_response
+from lecturedigest.openai_note_progress import (
+    checkpoint_record,
+    existing_candidates_by_variant,
+    generation_is_partial,
+    record_with_note_candidates,
+    selected_variants as select_note_variants,
+    time_budget_exhausted,
+)
 from lecturedigest.openai_note_prompt import (
     DEFAULT_OPENAI_NOTE_MODEL,
     DEFAULT_OPENAI_NOTE_PROMPT_VERSION,
@@ -19,6 +29,8 @@ from lecturedigest.openai_note_prompt import (
 )
 from lecturedigest.openai_note_repair import build_note_repair_request
 from lecturedigest.openai_types import OpenAIClientResult
+
+DEFAULT_OPENAI_NOTE_TIMEOUT_SECONDS = 240.0
 
 
 @dataclass(frozen=True)
@@ -44,13 +56,39 @@ def generate_note_candidates_with_openai(
     dry_run: bool = False,
     repair: bool = False,
     max_repair_attempts: int = 1,
+    timeout_seconds: float = DEFAULT_OPENAI_NOTE_TIMEOUT_SECONDS,
+    variants: list[str] | None = None,
+    candidate_limit: int | None = None,
+    resume: bool = False,
+    time_budget_seconds: float | None = None,
+    checkpoint: Callable[[LectureRecord], None] | None = None,
 ) -> OpenAINoteGenerationResult:
     units = _required_source_units(record)
     content_profile = build_content_profile(units, chunks=record.chunks)
-    openai_client = client or OpenAIClient()
+    openai_client = client or OpenAIClient(timeout_seconds=timeout_seconds)
+    selected_variants = select_note_variants(variants, candidate_limit=candidate_limit)
+    current_source_hash = source_hash(units)
+    started_at = time.perf_counter()
     client_results: list[OpenAIClientResult] = []
+    failed_variants: list[dict[str, object]] = []
+    skipped_variants: list[str] = []
+    repair_summaries: list[dict[str, object]] = []
     candidates: list[dict[str, object]] = []
-    for variant_index, variant in enumerate(NOTE_VARIANTS, start=1):
+    existing = existing_candidates_by_variant(
+        record,
+        model=model,
+        prompt_version=prompt_version,
+        source_digest=current_source_hash,
+    )
+
+    for variant in selected_variants:
+        variant_index = NOTE_VARIANTS.index(variant) + 1
+        if resume and variant in existing:
+            candidates.append(existing[variant])
+            skipped_variants.append(variant)
+            continue
+        if time_budget_exhausted(started_at, time_budget_seconds):
+            break
         request = build_note_request(
             record,
             source_units=units,
@@ -65,14 +103,40 @@ def generate_note_candidates_with_openai(
             continue
         if not result.succeeded:
             issue = result.to_processing_issue(stage=NOTE_STAGE)
-            raise NoteGenerationError(
-                ErrorDetail(
-                    code=issue.code if issue else "openai_note_generation_failed",
-                    message=issue.message if issue else "OpenAI note generation failed.",
-                    stage=NOTE_STAGE,
-                    retryable=issue.retryable if issue else False,
-                )
+            failed_variants.append(
+                {
+                    "variant": variant,
+                    "code": issue.code if issue else "openai_note_generation_failed",
+                    "message": issue.message if issue else "OpenAI note generation failed.",
+                    "retryable": issue.retryable if issue else False,
+                    "openai_call": result.metadata.to_dict(),
+                }
             )
+            checkpoint_record(
+                checkpoint,
+                record_with_note_candidates(
+                    record,
+                    candidates,
+                    selected_variants=selected_variants,
+                    failed_variants=failed_variants,
+                    skipped_variants=skipped_variants,
+                    repair_summaries=repair_summaries,
+                    client_results=client_results,
+                    model=model,
+                    prompt_version=prompt_version,
+                    tone=tone,
+                    source_digest=current_source_hash,
+                    content_profile=content_profile,
+                    repair=repair,
+                    max_repair_attempts=max_repair_attempts,
+                    resume=resume,
+                    candidate_limit=candidate_limit,
+                    time_budget_seconds=time_budget_seconds,
+                    time_budget_exhausted=time_budget_exhausted(started_at, time_budget_seconds),
+                    partial=True,
+                ),
+            )
+            continue
         candidates.extend(
             parse_note_response(
                 result.body,
@@ -86,6 +150,30 @@ def generate_note_candidates_with_openai(
                 expected_count=1,
                 variant_index_start=variant_index,
             )
+        )
+        checkpoint_record(
+            checkpoint,
+            record_with_note_candidates(
+                record,
+                candidates,
+                selected_variants=selected_variants,
+                failed_variants=failed_variants,
+                skipped_variants=skipped_variants,
+                repair_summaries=repair_summaries,
+                client_results=client_results,
+                model=model,
+                prompt_version=prompt_version,
+                tone=tone,
+                source_digest=current_source_hash,
+                content_profile=content_profile,
+                repair=repair,
+                max_repair_attempts=max_repair_attempts,
+                resume=resume,
+                candidate_limit=candidate_limit,
+                time_budget_seconds=time_budget_seconds,
+                time_budget_exhausted=time_budget_exhausted(started_at, time_budget_seconds),
+                partial=True,
+            ),
         )
     if dry_run:
         return OpenAINoteGenerationResult(
@@ -108,38 +196,35 @@ def generate_note_candidates_with_openai(
         prompt_version=prompt_version,
         repair=repair,
         max_repair_attempts=max_repair_attempts,
+        started_at=started_at,
+        time_budget_seconds=time_budget_seconds,
     )
 
-    approved_note = _stale_approved_note(
-        record.approved_note,
+    updated = record_with_note_candidates(
+        record,
+        repaired_candidates,
+        selected_variants=selected_variants,
+        failed_variants=failed_variants,
+        skipped_variants=skipped_variants,
+        repair_summaries=repair_summaries,
+        client_results=client_results,
         model=model,
         prompt_version=prompt_version,
-    )
-    updated = replace(
-        record,
-        status="note_candidates_ready",
-        stage=NOTE_STAGE,
-        note_candidates=repaired_candidates,
-        approved_note=approved_note,
-        note_metadata={
-            "provider": "openai_responses",
-            "model": model,
-            "prompt_version": prompt_version,
-            "tone": tone,
-            "candidate_count": len(repaired_candidates),
-            "source_hash": source_hash(units),
-            "content_profile": content_profile.to_dict(),
-            "approved_note_stale": approved_note.get("status") == "stale",
-            "repair_requested": repair,
-            "max_repair_attempts": max_repair_attempts if repair else 0,
-            "repair_attempted_count": len(repair_summaries),
-            "repair_success_count": sum(
-                1 for item in repair_summaries if item.get("applied")
-            ),
-            "repair_summaries": repair_summaries,
-            "last_note_call": client_results[-1].metadata.to_dict(),
-            "last_note_calls": [result.metadata.to_dict() for result in client_results],
-        },
+        tone=tone,
+        source_digest=current_source_hash,
+        content_profile=content_profile,
+        repair=repair,
+        max_repair_attempts=max_repair_attempts,
+        resume=resume,
+        candidate_limit=candidate_limit,
+        time_budget_seconds=time_budget_seconds,
+        time_budget_exhausted=time_budget_exhausted(started_at, time_budget_seconds),
+        partial=generation_is_partial(
+            repaired_candidates,
+            selected_variants=selected_variants,
+            failed_variants=failed_variants,
+            time_budget_exhausted=time_budget_exhausted(started_at, time_budget_seconds),
+        ),
     )
     return OpenAINoteGenerationResult(
         record=updated,
@@ -201,6 +286,8 @@ def _repair_flagged_candidates(
     prompt_version: str,
     repair: bool,
     max_repair_attempts: int,
+    started_at: float | None = None,
+    time_budget_seconds: float | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     if not repair or max_repair_attempts <= 0:
         return candidates, []
@@ -215,6 +302,20 @@ def _repair_flagged_candidates(
         current = candidate
         summary: dict[str, object] = {}
         for attempt in range(1, max_repair_attempts + 1):
+            if time_budget_exhausted(started_at, time_budget_seconds):
+                summary = {
+                    "candidate_id": current.get("candidate_id"),
+                    "variant": current.get("variant"),
+                    "attempt": attempt,
+                    "applied": False,
+                    "initial_status": _validation_status(current),
+                    "initial_failed_rules": _failed_rules(current),
+                    "repaired_status": _validation_status(current),
+                    "repaired_failed_rules": _failed_rules(current),
+                    "skipped_reason": "time_budget_exhausted",
+                }
+                current["repair_metadata"] = summary
+                break
             request = build_note_repair_request(
                 record,
                 source_units=source_units,
@@ -304,7 +405,40 @@ def _is_repair_improvement(
     repaired_failed = len(_failed_rules(repaired))
     if _validation_status(repaired) == "review_required":
         return True
-    return repaired_failed < original_failed
+    if repaired_failed < original_failed:
+        return True
+    if repaired_failed == original_failed:
+        return _body_depth_improved(original, repaired)
+    return False
+
+
+def _body_depth_improved(
+    original: dict[str, object],
+    repaired: dict[str, object],
+) -> bool:
+    original_metrics = _body_depth_metrics(original)
+    repaired_metrics = _body_depth_metrics(repaired)
+    return (
+        _metric(repaired_metrics, "markdown_chars")
+        >= _metric(original_metrics, "markdown_chars") + 500
+        or _metric(repaired_metrics, "topic_avg_chars")
+        >= _metric(original_metrics, "topic_avg_chars") + 50
+        or _metric(repaired_metrics, "h3_count") > _metric(original_metrics, "h3_count")
+    )
+
+
+def _body_depth_metrics(candidate: dict[str, object]) -> dict[str, object]:
+    validation = _validation(candidate)
+    body_depth = validation.get("body_depth")
+    if not isinstance(body_depth, dict):
+        return {}
+    metrics = body_depth.get("metrics")
+    return metrics if isinstance(metrics, dict) else {}
+
+
+def _metric(metrics: dict[str, object], key: str) -> float:
+    value = metrics.get(key)
+    return float(value) if isinstance(value, (int, float)) else 0.0
 
 
 def _validation_status(candidate: dict[str, object]) -> str:
@@ -342,29 +476,10 @@ def _required_source_units(record: LectureRecord) -> list[NoteSourceUnit]:
     )
 
 
-def _stale_approved_note(
-    approved_note: dict[str, object],
-    *,
-    model: str,
-    prompt_version: str,
-) -> dict[str, object]:
-    if not approved_note:
-        return {}
-    if (
-        approved_note.get("model") == model
-        and approved_note.get("prompt_version") == prompt_version
-    ):
-        return approved_note
-    return {
-        **approved_note,
-        "status": "stale",
-        "stale_reason": "model_or_prompt_version_changed",
-    }
-
-
 __all__ = [
     "DEFAULT_OPENAI_NOTE_MODEL",
     "DEFAULT_OPENAI_NOTE_PROMPT_VERSION",
+    "DEFAULT_OPENAI_NOTE_TIMEOUT_SECONDS",
     "OPENAI_NOTE_ENDPOINT",
     "OPENAI_NOTE_USE_CASE",
     "OpenAINoteGenerationResult",

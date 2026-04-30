@@ -66,7 +66,7 @@ def build_content_profile(
         has_process_flow=has_process_flow,
         has_comparison=has_comparison,
         strategy=strategy,
-        source_insufficient_for_full_note=strategy == "compact",
+        source_insufficient_for_full_note=strategy in {"tiny", "compact"},
         target_counts=_target_counts(strategy),
     )
 
@@ -97,36 +97,54 @@ def _strategy(estimated_tokens: int, topic_shift_count: int) -> str:
         return "chaptered"
     if estimated_tokens > 4500:
         return "expanded"
-    if estimated_tokens >= 700:
+    if estimated_tokens >= 1800:
         return "standard"
-    return "compact"
+    if estimated_tokens >= 700:
+        return "short"
+    if estimated_tokens >= 300:
+        return "compact"
+    return "tiny"
 
 
 def _target_counts(strategy: str) -> dict[str, tuple[int, int]]:
+    if strategy == "tiny":
+        return {
+            "learning_goals": (1, 2),
+            "core_topics": (1, 2),
+            "key_terms": (1, 5),
+            "review_questions": (1, 4),
+        }
     if strategy == "compact":
         return {
             "learning_goals": (1, 3),
-            "core_topics": (1, 2),
+            "core_topics": (1, 3),
             "key_terms": (1, 7),
             "review_questions": (1, 7),
+        }
+    if strategy == "short":
+        return {
+            "learning_goals": (3, 5),
+            "core_topics": (3, 5),
+            "key_terms": (5, 10),
+            "review_questions": (5, 10),
         }
     if strategy == "standard":
         return {
             "learning_goals": (4, 7),
-            "core_topics": (3, 6),
+            "core_topics": (5, 10),
             "key_terms": (8, 15),
             "review_questions": (8, 15),
         }
     if strategy == "expanded":
         return {
-            "learning_goals": (5, 7),
-            "core_topics": (5, 10),
-            "key_terms": (10, 20),
-            "review_questions": (10, 15),
+            "learning_goals": (5, 8),
+            "core_topics": (8, 14),
+            "key_terms": (12, 24),
+            "review_questions": (10, 18),
         }
     return {
-        "learning_goals": (5, 7),
-        "core_topics": (6, 12),
-        "key_terms": (12, 20),
-        "review_questions": (12, 15),
+        "learning_goals": (6, 10),
+        "core_topics": (10, 20),
+        "key_terms": (16, 30),
+        "review_questions": (12, 24),
     }

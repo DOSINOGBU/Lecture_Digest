@@ -118,6 +118,7 @@ def _candidate_from_payload(
         variant_index=variant_index,
     )
     markdown = markdown_from_sections(title=record.title, sections=sections)
+    generator_notes = _dict_or_empty(item.get("notes"))
     return {
         "candidate_id": candidate_id,
         "status": "pending_approval",
@@ -128,7 +129,7 @@ def _candidate_from_payload(
         "created_at": datetime.now(UTC).isoformat(),
         "markdown": markdown,
         "sections": sections,
-        "generator_notes": _dict_or_empty(item.get("notes")),
+        "generator_notes": generator_notes,
         "source_segment_ids": _union_segment_ids(sections),
         "content_profile": content_profile.to_dict(),
         "validation": validate_prd_candidate(
@@ -136,6 +137,7 @@ def _candidate_from_payload(
             sections=sections,
             source_units=source_units,
             content_profile=content_profile,
+            generator_notes=generator_notes,
         ),
         "provider_metadata": {
             "provider": "openai_responses",
@@ -172,7 +174,7 @@ def _sections_from_payload(
         if key.startswith(CORE_TOPIC_PREFIX):
             topic_index += 1
         text = str(raw.get("text") or "").strip()
-        segment_ids = _section_segment_ids(raw, text, source_units)
+        segment_ids = _section_segment_ids(raw, source_units)
         start_ts, end_ts = _section_time_range(segment_ids, source_units)
         sections.append(
             {
@@ -239,7 +241,6 @@ def _placeholder_section(
 
 def _section_segment_ids(
     raw: dict[str, object],
-    text: str,
     source_units: list[NoteSourceUnit],
 ) -> list[str]:
     valid_ids = {unit.segment_id for unit in source_units}
@@ -248,7 +249,6 @@ def _section_segment_ids(
     if isinstance(raw_ids, list):
         for item in raw_ids:
             found.extend(SEGMENT_ID_PATTERN.findall(str(item)))
-    found.extend(SEGMENT_ID_PATTERN.findall(text))
 
     unique = []
     for segment_id in found:
