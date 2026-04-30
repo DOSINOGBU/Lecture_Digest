@@ -14,6 +14,12 @@ from lecturedigest.errors import ErrorDetail, LectureDigestError, ValidationErro
 from lecturedigest.folder_ingestion import FolderIngestionResult, register_lecture_folder
 from lecturedigest.ingestion import register_lecture
 from lecturedigest.models import LectureRecord
+from lecturedigest.rag_cli import (
+    add_rag_parsers,
+    ask_command,
+    index_command,
+    summarize_command,
+)
 from lecturedigest.storage import JsonLectureRepository
 from lecturedigest.transcription import apply_stt_result
 from lecturedigest.transcript_cli import finalize_transcript_command
@@ -41,6 +47,12 @@ def main(argv: list[str] | None = None) -> int:
             return finalize_transcript_command(args, repository)
         if args.command == "chunk":
             return _chunk(args, repository)
+        if args.command == "index":
+            return index_command(args, repository)
+        if args.command == "summarize":
+            return summarize_command(args, repository)
+        if args.command == "ask":
+            return ask_command(args, repository)
     except LectureDigestError as exc:
         _print_error(exc)
         return 1
@@ -102,6 +114,8 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.9,
     )
+
+    add_rag_parsers(subparsers)
 
     subparsers.add_parser("list")
     return parser
