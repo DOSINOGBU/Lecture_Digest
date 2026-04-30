@@ -39,3 +39,7 @@ class EnrichmentError(LectureDigestError):
 
 class CorrectionError(LectureDigestError):
     pass
+
+
+class NoteGenerationError(LectureDigestError):
+    pass

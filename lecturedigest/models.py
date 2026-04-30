@@ -105,6 +105,9 @@ class LectureRecord:
     summaries: dict[str, object] = field(default_factory=dict)
     rag_metadata: dict[str, object] = field(default_factory=dict)
     note_sections: list[dict[str, object]] = field(default_factory=list)
+    note_candidates: list[dict[str, object]] = field(default_factory=list)
+    approved_note: dict[str, object] = field(default_factory=dict)
+    note_metadata: dict[str, object] = field(default_factory=dict)
     created_at: str | None = None
     input_mode: str = "file"
     lecture_title: str | None = None
@@ -134,6 +137,9 @@ class LectureRecord:
             "summaries": self.summaries,
             "rag_metadata": self.rag_metadata,
             "note_sections": self.note_sections,
+            "note_candidates": self.note_candidates,
+            "approved_note": self.approved_note,
+            "note_metadata": self.note_metadata,
             "created_at": self.created_at,
             "input_mode": self.input_mode,
             "lecture_title": self.lecture_title,
@@ -258,6 +264,9 @@ class LectureRecord:
             summaries=_as_metadata(payload.get("summaries", {})),
             rag_metadata=_as_metadata(payload.get("rag_metadata", {})),
             note_sections=_as_dict_list(payload.get("note_sections", [])),
+            note_candidates=_as_dict_list(payload.get("note_candidates", [])),
+            approved_note=_as_metadata(payload.get("approved_note", {})),
+            note_metadata=_as_metadata(payload.get("note_metadata", {})),
             created_at=(
                 str(payload["created_at"])
                 if payload.get("created_at") is not None

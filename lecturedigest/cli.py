@@ -14,6 +14,12 @@ from lecturedigest.errors import ErrorDetail, LectureDigestError, ValidationErro
 from lecturedigest.folder_ingestion import FolderIngestionResult, register_lecture_folder
 from lecturedigest.ingestion import register_lecture
 from lecturedigest.models import LectureRecord
+from lecturedigest.note_cli import (
+    add_note_parsers,
+    approve_note_command,
+    generate_notes_command,
+    reject_note_command,
+)
 from lecturedigest.rag_cli import (
     add_rag_parsers,
     ask_command,
@@ -53,6 +59,12 @@ def main(argv: list[str] | None = None) -> int:
             return summarize_command(args, repository)
         if args.command == "ask":
             return ask_command(args, repository)
+        if args.command == "generate-notes":
+            return generate_notes_command(args, repository)
+        if args.command == "approve-note":
+            return approve_note_command(args, repository)
+        if args.command == "reject-note":
+            return reject_note_command(args, repository)
     except LectureDigestError as exc:
         _print_error(exc)
         return 1
@@ -116,6 +128,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     add_rag_parsers(subparsers)
+    add_note_parsers(subparsers)
 
     subparsers.add_parser("list")
     return parser
