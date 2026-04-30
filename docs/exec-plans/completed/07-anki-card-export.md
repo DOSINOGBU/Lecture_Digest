@@ -27,11 +27,11 @@
 
 ## Steps
 
-- [ ] Anki 카드 입력 소스 우선순위를 정한다.
-- [ ] 출처 매핑 필수 필드를 정의한다.
-- [ ] 카드 유형별 생성 규칙을 정의한다.
-- [ ] 내보내기 형식과 실패 상태를 정의한다.
-- [ ] 표본 검수 기준을 만든다.
+- [x] Anki 카드 입력 소스 우선순위를 정한다.
+- [x] 출처 매핑 필수 필드를 정의한다.
+- [x] 카드 유형별 생성 규칙을 정의한다.
+- [x] 내보내기 형식과 실패 상태를 정의한다.
+- [x] 표본 검수 기준을 만든다.
 
 ## Validation
 
@@ -51,4 +51,12 @@
 
 ## Result
 
-진행 전입니다.
+Completed.
+
+- Added approved-note-only Anki card generation with Q&A, cloze, and code-card previews.
+- Preserved source segment ids, timestamps, lecture/chapter metadata, tags, and jump links on each card.
+- Added `generate-cards` and `export-anki` CLI commands with loading, empty, success, and error states.
+- Added local Anki-compatible TSV and JSON preview export without adding external dependencies.
+- Cards without source mappings are kept as `flagged` and skipped by export unless `--include-flagged` is used.
+- `.apkg` vs AnkiConnect remains a future integration decision; this plan ships the local preview/export bridge first.
+- Verification passed with `python -m unittest discover -s tests`, `python -m compileall lecturedigest tests`, and harness validation.
