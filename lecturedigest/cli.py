@@ -9,6 +9,11 @@ from lecturedigest.anki_cli import (
     export_anki_command,
     generate_cards_command,
 )
+from lecturedigest.auto_pipeline import (
+    AutoPipelineOptions,
+    format_auto_pipeline_result,
+    process_lecture_with_auto_ai,
+)
 from lecturedigest.chunking import chunk_lecture
 from lecturedigest.correction import (
     DEFAULT_CORRECTION_CONFIDENCE_THRESHOLD,
@@ -66,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
             return _register_folder(args, repository)
         if args.command == "list":
             return _list(repository)
+        if args.command == "process-lecture":
+            return _process_lecture(args, repository)
         if args.command == "transcribe":
             return transcribe_command(args, repository)
         if args.command == "import-stt":
@@ -128,10 +135,25 @@ def _build_parser() -> argparse.ArgumentParser:
     register_parser.add_argument("--title", required=True)
     register_parser.add_argument("--instructor", required=True)
     register_parser.add_argument("--category", required=True)
+    register_parser.add_argument("--auto-ai", action="store_true")
+    register_parser.add_argument("--include-ocr", action="store_true")
+    register_parser.add_argument("--time-budget-seconds", type=float)
 
     register_folder_parser = subparsers.add_parser("register-folder")
     register_folder_parser.add_argument("--folder", required=True, type=Path)
     register_folder_parser.add_argument("--instructor", required=True)
+    register_folder_parser.add_argument("--auto-ai", action="store_true")
+    register_folder_parser.add_argument("--include-ocr", action="store_true")
+    register_folder_parser.add_argument("--time-budget-seconds", type=float)
+
+    process_parser = subparsers.add_parser("process-lecture")
+    process_parser.add_argument("--lecture-id", required=True)
+    process_parser.add_argument("--openai", action="store_true")
+    process_parser.add_argument("--resume", action="store_true")
+    process_parser.add_argument("--include-ocr", action="store_true")
+    process_parser.add_argument("--dry-run", action="store_true")
+    process_parser.add_argument("--time-budget-seconds", type=float)
+    process_parser.add_argument("--note-candidate-count", type=int, default=3)
 
     chunk_parser = subparsers.add_parser("chunk")
     chunk_parser.add_argument("--lecture-id", required=True)
@@ -205,6 +227,14 @@ def _register(args: argparse.Namespace, repository: JsonLectureRepository) -> in
     )
     repository.save(record)
     print(_format_record(record))
+    if args.auto_ai:
+        result = _run_auto_pipeline(
+            repository,
+            lecture_id=record.lecture_id,
+            include_ocr=args.include_ocr,
+            time_budget_seconds=args.time_budget_seconds,
+        )
+        print(format_auto_pipeline_result(result))
     return 0
 
 
@@ -227,6 +257,19 @@ def _register_folder(
     for record in result.records:
         repository.save(record)
     print(_format_folder_result(result))
+    if args.auto_ai:
+        for record in result.records:
+            try:
+                pipeline_result = _run_auto_pipeline(
+                    repository,
+                    lecture_id=record.lecture_id,
+                    include_ocr=args.include_ocr,
+                    time_budget_seconds=args.time_budget_seconds,
+                )
+                print(format_auto_pipeline_result(pipeline_result))
+            except LectureDigestError as exc:
+                _print_error(exc)
+                continue
     return 0
 
 
@@ -239,6 +282,45 @@ def _list(repository: JsonLectureRepository) -> int:
     for lecture in lectures:
         print(_format_record(lecture))
     return 0
+
+
+def _process_lecture(
+    args: argparse.Namespace,
+    repository: JsonLectureRepository,
+) -> int:
+    result = process_lecture_with_auto_ai(
+        repository,
+        lecture_id=args.lecture_id,
+        options=AutoPipelineOptions(
+            openai=args.openai,
+            include_ocr=args.include_ocr,
+            resume=args.resume,
+            dry_run=args.dry_run,
+            time_budget_seconds=args.time_budget_seconds,
+            note_candidate_count=args.note_candidate_count,
+        ),
+    )
+    print(format_auto_pipeline_result(result))
+    return 0
+
+
+def _run_auto_pipeline(
+    repository: JsonLectureRepository,
+    *,
+    lecture_id: str,
+    include_ocr: bool,
+    time_budget_seconds: float | None,
+):
+    return process_lecture_with_auto_ai(
+        repository,
+        lecture_id=lecture_id,
+        options=AutoPipelineOptions(
+            openai=True,
+            include_ocr=include_ocr,
+            resume=True,
+            time_budget_seconds=time_budget_seconds,
+        ),
+    )
 
 
 def _chunk(args: argparse.Namespace, repository: JsonLectureRepository) -> int:

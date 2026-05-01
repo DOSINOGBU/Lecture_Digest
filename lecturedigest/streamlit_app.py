@@ -8,10 +8,10 @@ from lecturedigest.cli import DEFAULT_STORE
 from lecturedigest.errors import LectureDigestError
 from lecturedigest.models import CorrectionLogEntry, LectureRecord
 from lecturedigest.storage import JsonLectureRepository
+from lecturedigest.streamlit_registration import render_registration
 from lecturedigest.ui_actions import (
     approve_correction,
     approve_note,
-    register_lecture_from_paths,
     reject_correction,
     reject_note,
 )
@@ -38,7 +38,7 @@ def main() -> None:
         st.sidebar.text_input("Lecture store", str(DEFAULT_STORE))
     )
     repository = JsonLectureRepository(store_path)
-    _render_registration(repository)
+    render_registration(repository)
 
     with st.spinner("Loading lecture library"):
         library = load_library(repository)
@@ -62,30 +62,6 @@ def main() -> None:
     record = next(item for item in library.lectures if item.lecture_id == selected_id)
     _render_api_key_state()
     _render_lecture(record, repository)
-
-
-def _render_registration(repository: JsonLectureRepository) -> None:
-    with st.sidebar.expander("Register lecture", expanded=False):
-        video_path = st.text_input("Video path")
-        subtitle_path = st.text_input("Subtitle path")
-        title = st.text_input("Title")
-        instructor = st.text_input("Instructor")
-        category = st.text_input("Category")
-        if st.button("Register", use_container_width=True):
-            if not video_path or not title or not instructor or not category:
-                st.error("Video path, title, instructor, and category are required.")
-                return
-            _run_action(
-                lambda: register_lecture_from_paths(
-                    repository,
-                    video_path=video_path,
-                    subtitle_path=subtitle_path or None,
-                    title=title,
-                    instructor=instructor,
-                    category=category,
-                ),
-                success_message="Lecture registered.",
-            )
 
 
 def _render_api_key_state() -> None:
@@ -160,6 +136,7 @@ def _render_status(record: LectureRecord) -> None:
             "note": record.note_metadata,
             "cards": record.card_metadata,
             "quiz": record.quiz_metadata,
+            "pipeline": record.pipeline_metadata,
         }
     )
 

@@ -113,6 +113,7 @@ class LectureRecord:
     card_metadata: dict[str, object] = field(default_factory=dict)
     quiz_items: list[dict[str, object]] = field(default_factory=list)
     quiz_metadata: dict[str, object] = field(default_factory=dict)
+    pipeline_metadata: dict[str, object] = field(default_factory=dict)
     created_at: str | None = None
     input_mode: str = "file"
     lecture_title: str | None = None
@@ -150,6 +151,7 @@ class LectureRecord:
             "card_metadata": self.card_metadata,
             "quiz_items": self.quiz_items,
             "quiz_metadata": self.quiz_metadata,
+            "pipeline_metadata": self.pipeline_metadata,
             "created_at": self.created_at,
             "input_mode": self.input_mode,
             "lecture_title": self.lecture_title,
@@ -193,6 +195,7 @@ class LectureRecord:
             card_metadata=_as_metadata(payload.get("card_metadata", {})),
             quiz_items=_as_dict_list(payload.get("quiz_items", [])),
             quiz_metadata=_as_metadata(payload.get("quiz_metadata", {})),
+            pipeline_metadata=_as_metadata(payload.get("pipeline_metadata", {})),
             created_at=(
                 str(payload["created_at"])
                 if payload.get("created_at") is not None

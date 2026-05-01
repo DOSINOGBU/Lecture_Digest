@@ -6,6 +6,7 @@ from lecturedigest.correction_review import (
     approve_correction_candidate,
     reject_correction_candidate,
 )
+from lecturedigest.auto_pipeline import AutoPipelineOptions, process_lecture_with_auto_ai
 from lecturedigest.ingestion import register_lecture
 from lecturedigest.note_generation import approve_note_candidate, reject_note_candidate
 from lecturedigest.storage import JsonLectureRepository
@@ -19,6 +20,9 @@ def register_lecture_from_paths(
     title: str,
     instructor: str,
     category: str,
+    auto_ai: bool = False,
+    include_ocr: bool = False,
+    time_budget_seconds: float | None = None,
 ) -> str:
     record = register_lecture(
         video_path=Path(video_path),
@@ -28,6 +32,17 @@ def register_lecture_from_paths(
         category=category,
     )
     repository.save(record)
+    if auto_ai:
+        process_lecture_with_auto_ai(
+            repository,
+            lecture_id=record.lecture_id,
+            options=AutoPipelineOptions(
+                openai=True,
+                include_ocr=include_ocr,
+                resume=True,
+                time_budget_seconds=time_budget_seconds,
+            ),
+        )
     return record.lecture_id
 
 
