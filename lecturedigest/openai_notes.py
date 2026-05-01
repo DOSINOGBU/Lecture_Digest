@@ -27,6 +27,11 @@ from lecturedigest.openai_note_prompt import (
     OPENAI_NOTE_USE_CASE,
     build_note_request as _build_note_request,
 )
+from lecturedigest.openai_longform_notes import (
+    LONGFORM_NOTE_PROMPT_VERSION,
+    generate_longform_note_candidates_with_openai,
+    should_use_longform_notes,
+)
 from lecturedigest.openai_note_repair import build_note_repair_request
 from lecturedigest.openai_types import OpenAIClientResult
 
@@ -66,6 +71,36 @@ def generate_note_candidates_with_openai(
     units = _required_source_units(record)
     content_profile = build_content_profile(units, chunks=record.chunks)
     openai_client = client or OpenAIClient(timeout_seconds=timeout_seconds)
+    if should_use_longform_notes(record, content_profile):
+        longform_prompt_version = (
+            LONGFORM_NOTE_PROMPT_VERSION
+            if prompt_version == DEFAULT_OPENAI_NOTE_PROMPT_VERSION
+            else prompt_version
+        )
+        longform_result = generate_longform_note_candidates_with_openai(
+            record,
+            client=openai_client,
+            source_units=units,
+            content_profile=content_profile,
+            tone=tone,
+            model=model,
+            prompt_version=longform_prompt_version,
+            dry_run=dry_run,
+            repair=repair,
+            max_repair_attempts=max_repair_attempts,
+            variants=variants,
+            candidate_limit=candidate_limit,
+            resume=resume,
+            time_budget_seconds=time_budget_seconds,
+            checkpoint=checkpoint,
+        )
+        return OpenAINoteGenerationResult(
+            record=longform_result.record,
+            client_results=longform_result.client_results,
+            dry_run=longform_result.dry_run,
+            repair_requested=longform_result.repair_requested,
+            max_repair_attempts=longform_result.max_repair_attempts,
+        )
     selected_variants = select_note_variants(variants, candidate_limit=candidate_limit)
     current_source_hash = source_hash(units)
     started_at = time.perf_counter()
