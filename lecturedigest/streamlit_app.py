@@ -16,13 +16,16 @@ from lecturedigest.ui_actions import (
     reject_note,
 )
 from lecturedigest.ui_state import (
+    card_review_state,
     correction_review_queue,
     cost_or_quota_issues,
     has_openai_api_key,
     lecture_label,
     load_library,
     note_candidates,
+    note_quality_review,
     paid_action_previews,
+    quiz_review_state,
     status_counts,
 )
 
@@ -165,6 +168,7 @@ def _render_note_review(
     record: LectureRecord,
     repository: JsonLectureRepository,
 ) -> None:
+    _render_note_quality(record)
     candidates = note_candidates(record)
     if not candidates:
         st.info("No note candidates are available for review.")
@@ -206,6 +210,68 @@ def _render_note_review(
                     ),
                     success_message="Note candidate rejected.",
                 )
+
+
+def _render_note_quality(record: LectureRecord) -> None:
+    state = note_quality_review(record)
+    if state.error_message:
+        st.error("Note quality could not be inspected.")
+        st.code(state.error_message)
+        return
+
+    result = state.result
+    summary = _dict(result.get("summary"))
+    overall = str(summary.get("overall_status") or "unknown")
+    columns = st.columns(5)
+    columns[0].metric("Quality", overall)
+    columns[1].metric("Review ready", int(summary.get("review_ready_count") or 0))
+    columns[2].metric("Needs review", int(summary.get("needs_review_count") or 0))
+    columns[3].metric("Blocked", int(summary.get("blocked_count") or 0))
+    columns[4].metric("Warnings", int(summary.get("warning_count") or 0))
+
+    if overall == "blocked":
+        st.error("At least one note candidate is blocked by quality gates.")
+    elif overall == "needs_review":
+        st.warning("At least one note candidate is approved or readable but still needs review.")
+    elif overall == "review_ready":
+        st.success("Note candidates are ready for human review.")
+    elif overall == "empty":
+        st.info("No note candidates are available for quality inspection.")
+
+    detail = {
+        "visible_source_artifacts": summary.get("visible_source_artifact_count", 0),
+        "source_mapping_gaps": summary.get("source_mapping_gap_count", 0),
+        "known_acronym_gaps": summary.get("acronym_metadata_gap_count", 0),
+    }
+    st.caption("Quality gate details")
+    st.json(detail)
+
+    for item in _dict_list(result.get("items")):
+        label = (
+            f"{item.get('candidate_id')} | gate={item.get('gate_status')} "
+            f"| approved={item.get('approved')}"
+        )
+        with st.expander(label, expanded=item.get("gate_status") != "review_ready"):
+            st.json(
+                {
+                    "candidate_status": item.get("candidate_status"),
+                    "validation_status": item.get("validation_status"),
+                    "failed_rules": item.get("failed_rules", []),
+                    "warnings": item.get("warnings", []),
+                    "quality_flags": item.get("quality_flags", []),
+                    "visible_source_artifacts": item.get("visible_source_artifacts", []),
+                    "source_mapping_gaps": item.get("source_mapping_gaps", []),
+                    "difficulty_explanations": {
+                        "actual": item.get("difficulty_explanation_count"),
+                        "expected": item.get("expected_difficult_concept_count"),
+                    },
+                    "known_acronyms": {
+                        "explained": item.get("known_acronym_explained_count"),
+                        "expected": item.get("known_acronym_expected_count"),
+                    },
+                    "source_coverage_ratio": item.get("source_coverage_ratio"),
+                }
+            )
 
 
 def _render_correction_review(
@@ -259,31 +325,99 @@ def _render_correction_entry(
 
 
 def _render_cards(record: LectureRecord) -> None:
-    if not record.flashcards:
+    state = card_review_state()
+    _render_review_errors(state.error_messages)
+    if state.manifest:
+        st.caption("Card review source of truth")
+        st.json(
+            {
+                "manifest": state.manifest_path,
+                "source_policy": state.manifest.get("source_policy"),
+                "selected_set": state.manifest.get("selected_set"),
+                "default_exportable_scope": _dict(
+                    state.manifest.get("review_policy")
+                ).get("default_exportable_scope"),
+            }
+        )
+        expected = state.expected_counts
+        columns = st.columns(4)
+        columns[0].metric("Ready cards", expected.get("ready_cards", len(state.items)))
+        columns[1].metric("Excluded flagged", expected.get("excluded_flagged_cards", 0))
+        columns[2].metric("Source gaps", expected.get("source_mapping_missing", 0))
+        columns[3].metric("Visible sources", expected.get("visible_source_artifacts", 0))
+        st.write("Card type distribution")
+        st.json(state.manifest.get("type_counts", {}))
+        excluded = _dict_list(state.manifest.get("excluded_cards"))
+        if excluded:
+            st.warning("Excluded flagged cards remain visible as review context.")
+            st.table(excluded)
+
+    cards = state.items or [item for item in record.flashcards if isinstance(item, dict)]
+    if not cards:
         st.info("No Anki card preview is available.")
         return
-    for card in record.flashcards:
-        with st.container(border=True):
-            st.write(f"{card.get('card_type')} | {card.get('status')}")
+
+    st.caption(f"Showing {len(cards)} card review items.")
+    for index, card in enumerate(cards, start=1):
+        label = (
+            f"{index}. {card.get('card_type', 'card')} | "
+            f"{card.get('status', 'unknown')} | {card.get('card_id', '')}"
+        )
+        with st.expander(label, expanded=False):
             st.write(card.get("front") or card.get("cloze_text") or "")
             st.caption(card.get("back") or card.get("extra") or "")
-            st.json(card.get("source", {}))
+            st.json(
+                {
+                    "source_segment_ids": card.get("source_segment_ids", []),
+                    "start_ts": card.get("start_ts"),
+                    "end_ts": card.get("end_ts"),
+                    "jump_link": card.get("jump_link"),
+                    "tags": card.get("tags", []),
+                    "validation": card.get("validation", {}),
+                }
+            )
 
 
 def _render_quizzes(record: LectureRecord) -> None:
-    if not record.quiz_items:
+    state = quiz_review_state()
+    _render_review_errors(state.error_messages)
+    if state.manifest:
+        st.caption("Quiz review source of truth")
+        columns = st.columns(4)
+        columns[0].metric("Expected total", state.expected_counts.get("expected_total", 0))
+        columns[1].metric("Loaded total", len(state.items))
+        columns[2].metric("Sources", len(state.source_counts))
+        columns[3].metric("Dedupe", str(state.summary.get("dedupe_policy") or ""))
+        st.write("Source counts")
+        st.json(state.source_counts)
+
+    quizzes = state.items or [item for item in record.quiz_items if isinstance(item, dict)]
+    if not quizzes:
         st.info("No quiz preview is available.")
         return
-    for item in record.quiz_items:
-        with st.container(border=True):
-            st.write(f"{item.get('question_type')} | {item.get('status')}")
+
+    st.caption(f"Showing {len(quizzes)} quiz review items.")
+    for index, item in enumerate(quizzes, start=1):
+        badge = str(item.get("_review_source_badge") or "lecture_store")
+        label = (
+            f"{index}. {badge} | {item.get('question_type', 'quiz')} | "
+            f"{item.get('status', 'unknown')}"
+        )
+        with st.expander(label, expanded=False):
             st.write(item.get("question") or "")
             choices = item.get("choices", [])
             if isinstance(choices, list) and choices:
                 st.table(choices)
             else:
                 st.caption(str(item.get("expected_answer") or ""))
-            st.json(item.get("source", {}))
+            st.json(
+                {
+                    "source_badge": badge,
+                    "source": item.get("source", {}),
+                    "source_card_ids": item.get("source_card_ids", []),
+                    "validation": item.get("validation", {}),
+                }
+            )
 
 
 def _render_paid_actions(record: LectureRecord) -> None:
@@ -320,11 +454,26 @@ def _run_action(action, *, success_message: str) -> None:
     st.rerun()
 
 
+def _render_review_errors(messages: list[str]) -> None:
+    for message in messages:
+        st.warning(message)
+
+
 def _label_for_id(records: list[LectureRecord], lecture_id: str) -> str:
     for record in records:
         if record.lecture_id == lecture_id:
             return lecture_label(record)
     return lecture_id
+
+
+def _dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 if __name__ == "__main__":
