@@ -26,9 +26,8 @@ class OpenAIAnkiCardsTest(unittest.TestCase):
 
     def test_generates_ai_cards_from_openai_response(self):
         record = _approved_record()
-        client = sequence_openai_client([_card_response(_cards_payload())])
 
-        result = generate_anki_cards_with_openai(record, client=client)
+        result = _generate_with_cards(record, _cards_payload())
 
         self.assertEqual(result.record.status, "anki_cards_ready")
         self.assertEqual(result.record.card_metadata["provider"], "openai_responses")
@@ -40,6 +39,33 @@ class OpenAIAnkiCardsTest(unittest.TestCase):
             self.assertEqual(card["source_note_candidate_id"], "note-1")
             self.assertEqual(card["model"], DEFAULT_OPENAI_CARD_MODEL)
 
+    def test_generates_unique_ids_for_similar_ai_cards(self):
+        record = _approved_record()
+        shared_prefix = "What should you remember about browser rendering when "
+        cards = [
+            {
+                "card_id": "model-card",
+                "card_type": "qa",
+                "note_section_id": "note-sec-1",
+                "front": shared_prefix + "the DOM structure changes?",
+                "back": "Check whether the DOM structure changed as expected.",
+                "source_segment_ids": ["seg-1"],
+            },
+            {
+                "card_id": "model-card",
+                "card_type": "qa",
+                "note_section_id": "note-sec-1",
+                "front": shared_prefix + "CSS rules affect the rendered page?",
+                "back": "Check whether CSS rules are changing the visual result.",
+                "source_segment_ids": ["seg-1"],
+            },
+        ]
+        result = _generate_with_cards(record, cards)
+
+        card_ids = [str(card["card_id"]) for card in result.record.flashcards]
+        self.assertEqual(len(card_ids), 2)
+        self.assertEqual(len(set(card_ids)), 2)
+
     def test_requires_approved_note(self):
         with self.assertRaises(AnkiExportError) as context:
             generate_anki_cards_with_openai(lecture_record([]), dry_run=True)
@@ -48,23 +74,18 @@ class OpenAIAnkiCardsTest(unittest.TestCase):
 
     def test_flags_ai_card_without_source_mapping(self):
         record = _approved_record()
-        client = sequence_openai_client(
+        result = _generate_with_cards(
+            record,
             [
-                _card_response(
-                    [
-                        {
-                            "card_type": "qa",
-                            "note_section_id": "note-sec-1",
-                            "front": "What does DOM mean for rendering?",
-                            "back": "DOM is the structure the browser can use.",
-                            "source_segment_ids": [],
-                        }
-                    ]
-                )
-            ]
+                {
+                    "card_type": "qa",
+                    "note_section_id": "note-sec-1",
+                    "front": "What does DOM mean for rendering?",
+                    "back": "DOM is the structure the browser can use.",
+                    "source_segment_ids": [],
+                }
+            ],
         )
-
-        result = generate_anki_cards_with_openai(record, client=client)
 
         self.assertEqual(result.record.flashcards[0]["status"], "flagged")
         self.assertIn(
@@ -74,27 +95,43 @@ class OpenAIAnkiCardsTest(unittest.TestCase):
 
     def test_flags_visible_source_on_front(self):
         record = _approved_record()
-        client = sequence_openai_client(
+        result = _generate_with_cards(
+            record,
             [
-                _card_response(
-                    [
-                        {
-                            "card_type": "qa",
-                            "note_section_id": "note-sec-1",
-                            "front": "source: seg-1 @ 00:00:00 What is DOM?",
-                            "back": "DOM is the document structure.",
-                            "source_segment_ids": ["seg-1"],
-                        }
-                    ]
-                )
-            ]
+                {
+                    "card_type": "qa",
+                    "note_section_id": "note-sec-1",
+                    "front": "source: seg-1 @ 00:00:00 What is DOM?",
+                    "back": "DOM is the document structure.",
+                    "source_segment_ids": ["seg-1"],
+                }
+            ],
         )
-
-        result = generate_anki_cards_with_openai(record, client=client)
 
         self.assertEqual(result.record.flashcards[0]["status"], "flagged")
         self.assertIn(
             "source_visible_on_front",
+            result.record.flashcards[0]["validation"]["failed_rules"],
+        )
+
+    def test_flags_visible_source_on_back(self):
+        record = _approved_record()
+        result = _generate_with_cards(
+            record,
+            [
+                {
+                    "card_type": "qa",
+                    "note_section_id": "note-sec-1",
+                    "front": "What is DOM used for?",
+                    "back": "DOM is the document structure. source: seg-1",
+                    "source_segment_ids": ["seg-1"],
+                }
+            ],
+        )
+
+        self.assertEqual(result.record.flashcards[0]["status"], "flagged")
+        self.assertIn(
+            "source_visible_on_back",
             result.record.flashcards[0]["validation"]["failed_rules"],
         )
 
@@ -107,9 +144,7 @@ class OpenAIAnkiCardsTest(unittest.TestCase):
             "back": "It turns parsed content into visible output.",
             "source_segment_ids": ["seg-1"],
         }
-        client = sequence_openai_client([_card_response([duplicate, dict(duplicate)])])
-
-        result = generate_anki_cards_with_openai(record, client=client)
+        result = _generate_with_cards(record, [duplicate, dict(duplicate)])
 
         self.assertEqual(len(result.record.flashcards), 1)
         self.assertEqual(
@@ -168,6 +203,11 @@ class OpenAIAnkiCardsTest(unittest.TestCase):
 
 def _card_types(record):
     return {str(card["card_type"]) for card in record.flashcards}
+
+
+def _generate_with_cards(record, cards):
+    client = sequence_openai_client([_card_response(cards)])
+    return generate_anki_cards_with_openai(record, client=client)
 
 
 def _approved_record():

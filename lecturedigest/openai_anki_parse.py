@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 
@@ -85,7 +86,7 @@ def _card_from_payload(
     source = _source_payload(record, source_ids, segment_lookup, section)
     difficulty = _difficulty(item.get("difficulty"))
     card = {
-        "card_id": _card_id(record, note_section_id, card_type, item),
+        "card_id": _card_id(record, note_section_id, card_type, item, source_ids),
         "lecture_id": record.lecture_id,
         "note_section_id": note_section_id,
         "card_type": card_type,
@@ -189,13 +190,27 @@ def _card_id(
     note_section_id: str,
     card_type: str,
     item: dict[str, object],
+    source_ids: list[str],
 ) -> str:
     explicit = str(item.get("card_id") or "").strip()
-    if explicit:
-        return explicit
-    seed = f"{note_section_id}:{card_type}:{item.get('front', '')}"
-    safe = re.sub(r"[^0-9A-Za-z_-]+", "-", seed)[:80].strip("-")
-    return f"{record.lecture_id}:openai:{safe or card_type}"
+    front = str(item.get("front") or "")
+    cloze_text = str(item.get("cloze_text") or "")
+    back = str(item.get("back") or "")
+    seed = "\n".join(
+        [
+            explicit,
+            note_section_id,
+            card_type,
+            front,
+            cloze_text,
+            back,
+            ",".join(source_ids),
+        ]
+    )
+    label = explicit or f"{note_section_id}:{card_type}:{front or cloze_text}"
+    safe = re.sub(r"[^0-9A-Za-z_-]+", "-", label)[:72].strip("-")
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10]
+    return f"{record.lecture_id}:openai:{safe or card_type}-{digest}"
 
 
 def _jump_link(record: LectureRecord, start_ts: str) -> str:

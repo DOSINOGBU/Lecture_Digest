@@ -39,6 +39,10 @@ def validate_card(card: dict[str, object]) -> dict[str, object]:
 
     if SOURCE_ARTIFACT_PATTERN.search(str(card.get("front") or "")):
         failed.append("source_visible_on_front")
+    if SOURCE_ARTIFACT_PATTERN.search(str(card.get("cloze_text") or "")):
+        failed.append("source_visible_on_front")
+    if SOURCE_ARTIFACT_PATTERN.search(str(card.get("back") or "")):
+        failed.append("source_visible_on_back")
     if card_type == "cloze" and _bad_cloze(cloze_text):
         failed.append("bad_cloze")
     if card_type != "cloze" and _answer_leaked_in_front(front, back):
