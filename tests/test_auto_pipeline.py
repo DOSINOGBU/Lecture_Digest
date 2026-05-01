@@ -9,8 +9,8 @@ from lecturedigest.auto_pipeline import (
     planned_auto_pipeline_steps,
     process_lecture_with_auto_ai,
 )
-from lecturedigest.errors import ValidationError
-from lecturedigest.models import LectureRecord, TranscriptSegment
+from lecturedigest.errors import TranscriptionError, ValidationError
+from lecturedigest.models import LectureRecord, ProcessingIssue, TranscriptSegment
 from lecturedigest.storage import JsonLectureRepository
 from support import lecture_record, segment
 
@@ -75,6 +75,27 @@ class AutoPipelineTest(unittest.TestCase):
         self.assertEqual(fake.calls[0], "transcribe")
         saved = _saved_record(self.repository, record)
         self.assertEqual(saved.segments[0].text, "Generated transcript")
+
+    def test_stt_failure_stops_before_correction(self):
+        record = _stt_pending_record()
+        self.repository.save(record)
+        fake = _FakePipelineSteps(transcribe_fails=True)
+
+        with self.assertRaises(TranscriptionError) as context:
+            process_lecture_with_auto_ai(
+                self.repository,
+                lecture_id=record.lecture_id,
+                options=AutoPipelineOptions(openai=True, time_budget_seconds=120),
+                dependencies=fake.dependencies(),
+            )
+
+        self.assertEqual(context.exception.detail.code, "openai_request_timeout")
+        self.assertEqual(fake.calls, ["transcribe"])
+        saved = _saved_record(self.repository, record)
+        self.assertEqual(saved.pipeline_metadata["status"], "failed")
+        self.assertEqual(saved.pipeline_metadata["failed_step"], "transcribe")
+        self.assertEqual(saved.pipeline_metadata["time_budget_seconds"], 120.0)
+        self.assertNotIn("transcribe", saved.pipeline_metadata["completed_steps"])
 
     def test_include_ocr_adds_ocr_step(self):
         record = _subtitle_record()
@@ -227,9 +248,15 @@ class AutoPipelineTest(unittest.TestCase):
 
 
 class _FakePipelineSteps:
-    def __init__(self, *, block_all_notes: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        block_all_notes: bool = False,
+        transcribe_fails: bool = False,
+    ) -> None:
         self.calls: list[str] = []
         self.block_all_notes = block_all_notes
+        self.transcribe_fails = transcribe_fails
 
     def dependencies(self) -> AutoPipelineDependencies:
         return AutoPipelineDependencies(
@@ -248,6 +275,21 @@ class _FakePipelineSteps:
         def run(record: LectureRecord, options: AutoPipelineOptions) -> LectureRecord:
             self.calls.append(name)
             if name == "transcribe":
+                if self.transcribe_fails:
+                    return replace(
+                        record,
+                        status="stt_failed",
+                        stage="transcription",
+                        issues=[
+                            *record.issues,
+                            ProcessingIssue(
+                                code="openai_request_timeout",
+                                message="OpenAI request timed out.",
+                                stage="transcription",
+                                retryable=True,
+                            ),
+                        ],
+                    )
                 return replace(
                     record,
                     status="transcript_ready",

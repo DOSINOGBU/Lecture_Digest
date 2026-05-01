@@ -6,7 +6,12 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
-from lecturedigest.errors import ErrorDetail, LectureDigestError, ValidationError
+from lecturedigest.errors import (
+    ErrorDetail,
+    LectureDigestError,
+    TranscriptionError,
+    ValidationError,
+)
 from lecturedigest.models import LectureRecord, ProcessingIssue
 from lecturedigest.note_generation import approve_note_candidate
 from lecturedigest.note_quality import inspect_note_quality
@@ -141,6 +146,7 @@ def process_lecture_with_auto_ai(
             return AutoPipelineResult(record=record, steps=executed, status="partial")
         try:
             record = _run_step(step, record, opts, deps, repository.save)
+            _validate_step_output(step, record)
         except Exception as exc:
             record = _record_failed_step(record, step, exc)
             repository.save(record)
@@ -294,6 +300,26 @@ def _validate_start(record: LectureRecord, options: AutoPipelineOptions) -> None
     _validate_record_can_process(record)
 
 
+def _validate_step_output(step: str, record: LectureRecord) -> None:
+    if step != "transcribe":
+        return
+    if record.status != "stt_failed" and record.segments:
+        return
+    issue = record.issues[-1] if record.issues else None
+    raise TranscriptionError(
+        ErrorDetail(
+            code=issue.code if issue is not None else "stt_segments_missing",
+            message=(
+                issue.message
+                if issue is not None
+                else "Transcription completed without transcript segments."
+            ),
+            stage="transcription",
+            retryable=issue.retryable if issue is not None else False,
+        )
+    )
+
+
 def _validate_record_can_process(record: LectureRecord) -> None:
     if record.transcript_source == "subtitle_unmatched" or record.status == "subtitle_unmatched":
         raise ValidationError(
@@ -335,6 +361,8 @@ def _record_failed_step(record: LectureRecord, step: str, exc: Exception) -> Lec
             status="failed",
             current_step=step,
             completed_steps=_completed_steps(record),
+            time_budget_seconds=_pipeline_time_budget(record),
+            time_budget_exhausted=bool(record.pipeline_metadata.get("time_budget_exhausted")),
             failed_step=step,
             failure={"code": code, "message": message, "retryable": retryable},
         ),
@@ -416,6 +444,13 @@ def _require_record(repository: JsonLectureRepository, lecture_id: str) -> Lectu
 
 def _completed_steps(record: LectureRecord) -> list[str]:
     return [str(item) for item in _list(record.pipeline_metadata.get("completed_steps"))]
+
+
+def _pipeline_time_budget(record: LectureRecord) -> float | None:
+    value = record.pipeline_metadata.get("time_budget_seconds")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
 
 
 def _time_budget_exhausted(started: float, budget: float | None) -> bool:

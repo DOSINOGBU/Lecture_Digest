@@ -20,6 +20,7 @@ from lecturedigest.models import LectureRecord, ProcessingIssue, TranscriptSegme
 from lecturedigest.openai_client import OpenAIClient
 from lecturedigest.openai_transcription import (
     DEFAULT_STT_CHUNKING_STRATEGY,
+    DEFAULT_STT_TIMEOUT_SECONDS,
     MAX_TRANSCRIPTION_UPLOAD_BYTES,
     SUPPORTED_TRANSCRIPTION_EXTENSIONS,
     transcribe_lecture_with_openai,
@@ -65,7 +66,7 @@ def transcribe_large_lecture_with_openai(
             dry_run=True,
         )
 
-    openai_client = client or OpenAIClient()
+    openai_client = client or OpenAIClient(timeout_seconds=DEFAULT_STT_TIMEOUT_SECONDS)
     output_dir = tempfile.mkdtemp(
         prefix="lecturedigest-stt-",
         dir=str(temp_root) if temp_root is not None else None,

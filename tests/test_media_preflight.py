@@ -126,6 +126,20 @@ class MediaPreflightTest(unittest.TestCase):
         self.assertEqual(result.duration_seconds, 650.0)
         self.assertEqual(runner.commands[0][0], "ffprobe")
 
+    def test_run_media_preflight_reads_ffprobe_as_utf8(self):
+        media = _media(self.root)
+        runner = EncodingAwareRunner()
+
+        result = run_media_preflight(
+            media,
+            tools=_tools(),
+            runner=runner,
+        )
+
+        self.assertEqual(result.duration_seconds, 650.0)
+        self.assertEqual(runner.encoding, "utf-8")
+        self.assertEqual(runner.errors, "replace")
+
     def test_builds_audio_chunk_plan_with_offsets(self):
         preflight = parse_ffprobe_json(
             _ffprobe_payload(duration=650),
@@ -201,6 +215,22 @@ class FakeRunner:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"fake audio")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+
+class EncodingAwareRunner:
+    def __init__(self):
+        self.encoding = None
+        self.errors = None
+
+    def __call__(self, command, *, capture_output, text, check, encoding, errors):
+        self.encoding = encoding
+        self.errors = errors
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(_ffprobe_payload(), ensure_ascii=False),
+            stderr="경고 없음",
+        )
 
 
 def _media(root: Path) -> Path:

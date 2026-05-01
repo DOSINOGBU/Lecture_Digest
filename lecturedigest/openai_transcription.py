@@ -20,6 +20,7 @@ OPENAI_TRANSCRIPTIONS_ENDPOINT = "/v1/audio/transcriptions"
 OPENAI_TRANSCRIPTION_USE_CASE = "stt_transcription"
 OPENAI_TRANSCRIPTION_PROMPT_VERSION = "openai-transcription-v1"
 DEFAULT_STT_CHUNKING_STRATEGY = "auto"
+DEFAULT_STT_TIMEOUT_SECONDS = 600.0
 MAX_TRANSCRIPTION_UPLOAD_BYTES = 25 * 1024 * 1024
 SUPPORTED_TRANSCRIPTION_EXTENSIONS = {
     ".mp3",
@@ -65,7 +66,7 @@ def transcribe_lecture_with_openai(
         chunking_strategy=chunking_strategy,
     )
     request = build_transcription_request(preflight)
-    openai_client = client or OpenAIClient()
+    openai_client = client or OpenAIClient(timeout_seconds=DEFAULT_STT_TIMEOUT_SECONDS)
     client_result = openai_client.send(request, dry_run=dry_run)
 
     if dry_run:

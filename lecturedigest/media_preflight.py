@@ -121,7 +121,7 @@ def run_media_preflight(
         "-show_streams",
         str(media_path),
     ]
-    result = runner(command, capture_output=True, text=True, check=False)
+    result = _run_text_command(runner, command)
     if result.returncode != 0:
         raise TranscriptionError(
             ErrorDetail(
@@ -222,7 +222,7 @@ def extract_audio_chunks(
     for plan in build_audio_chunk_plan(preflight, chunk_seconds=chunk_seconds):
         output_path = output_root / f"{plan.chunk_id}.m4a"
         command = _ffmpeg_split_command(preflight.source_path, output_path, tool_paths, plan)
-        result = runner(command, capture_output=True, text=True, check=False)
+        result = _run_text_command(runner, command)
         if result.returncode != 0:
             raise TranscriptionError(
                 ErrorDetail(
@@ -285,6 +285,26 @@ def _resolve_tool(
             retryable=False,
         )
     )
+
+
+def _run_text_command(
+    runner: CommandRunner,
+    command: list[str],
+) -> subprocess.CompletedProcess:
+    try:
+        return runner(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except TypeError as exc:
+        message = str(exc)
+        if "encoding" not in message and "errors" not in message:
+            raise
+        return runner(command, capture_output=True, text=True, check=False)
 
 
 def _file_size(path: Path) -> int:
