@@ -46,6 +46,12 @@ The flagged card was excluded from the default golden sample and from the local 
 - `.lecturedigest/card-candidate-sets/19a-gpt41-standard/golden-set-3-preview.md`
 - `.lecturedigest/card-candidate-sets/19a-gpt41-standard/golden-set-3-summary.json`
 
+## Source Of Truth Manifest
+
+- `docs/golden-samples/card-browser-understanding-set-3.json`
+
+21 UI and 22 revalidation should use this manifest as the card review source of truth. The generated `.lecturedigest` artifacts remain local and uncommitted.
+
 ## Code Hardening
 
 - OpenAI card parsing now creates `card_id` values with a stable hash suffix based on card type, section, front/cloze, back, and source segment IDs.

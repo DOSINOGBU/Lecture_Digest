@@ -1,0 +1,50 @@
+{
+  "kind": "card_golden_sample",
+  "lecture_id": "lec_3f51e7be057c",
+  "lecture_slug": "browser-understanding",
+  "source_policy": "local_golden_artifact",
+  "selected_set": "19a-gpt41-standard/set-3",
+  "artifact_paths": {
+    "store": ".lecturedigest/card-candidate-sets/19a-gpt41-standard/golden-set-3-store.json",
+    "cards": ".lecturedigest/card-candidate-sets/19a-gpt41-standard/golden-set-3-cards.json",
+    "tsv": ".lecturedigest/card-candidate-sets/19a-gpt41-standard/golden-set-3-cards.tsv",
+    "preview": ".lecturedigest/card-candidate-sets/19a-gpt41-standard/golden-set-3-preview.md",
+    "summary": ".lecturedigest/card-candidate-sets/19a-gpt41-standard/golden-set-3-summary.json"
+  },
+  "expected_counts": {
+    "original_cards": 43,
+    "ready_cards": 42,
+    "excluded_flagged_cards": 1,
+    "duplicate_id_excess": 0,
+    "source_mapping_missing": 0,
+    "visible_source_artifacts": 0
+  },
+  "type_counts": {
+    "qa": 29,
+    "cloze": 11,
+    "application": 2,
+    "code": 0
+  },
+  "excluded_cards": [
+    {
+      "original_card_id": "lec_3f51e7be057c:openai:lec_3f51e7be057c-note-topic_2-cloze-c1-c2",
+      "card_type": "cloze",
+      "failed_rules": [
+        "bad_cloze"
+      ]
+    }
+  ],
+  "review_policy": {
+    "ui_source_of_truth": "this_manifest",
+    "show_excluded_flagged_count": true,
+    "show_type_distribution": true,
+    "default_exportable_scope": "ready_cards_only",
+    "human_spot_check_required": true
+  },
+  "revalidation_policy": {
+    "use_ready_cards": true,
+    "expected_review_pool_size": 42,
+    "report_excluded_flagged_cards": true,
+    "report_type_breakdown": true
+  }
+}

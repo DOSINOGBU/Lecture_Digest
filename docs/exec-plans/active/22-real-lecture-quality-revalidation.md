@@ -43,3 +43,30 @@
 - The expected quiz review pool is 43 total items: 8 `legacy_e2e` items plus 35 `golden_set_3` items.
 - Revalidation should report combined metrics and source-level breakdowns.
 - The existing E2E store quiz list is only one source in the combined pool, not the complete quiz baseline.
+
+## 18f Note Revalidation Gate
+
+- Note revalidation must run or reproduce `inspect-note-quality` for the real lecture.
+- The current approved note is expected to be `needs_review`, not clean pass.
+- Known warning flags must be recorded explicitly:
+  - `missing_flow_diagram`
+  - `missing_comparison_table`
+  - `missing_code_block`
+  - `coverage_too_sparse`
+- Revalidation should separate blocking failures from warning-level waivers.
+- A clean golden-note promotion requires either fixing or intentionally waiving those warnings.
+
+## 19b Card Revalidation Source
+
+- Card revalidation must use `docs/golden-samples/card-browser-understanding-set-3.json`.
+- The expected card review pool is 42 ready cards.
+- The excluded flagged card count is 1, with reason `bad_cloze`.
+- Revalidation should report type breakdown, source mapping gaps, visible source artifacts, and Anki TSV availability.
+- Human spot-check should review whether the 42 ready cards are actually useful for memorization.
+
+## Pass And Partial Criteria
+
+- Note: `Partial` is acceptable if the approved note has no blocking failures but still has documented warning flags.
+- Cards: `Passed` requires 42 ready cards, 0 duplicate IDs, 0 source mapping gaps, and 0 visible source artifacts.
+- Quiz: `Passed` requires the combined 43-item manifest counts to match both sources and source badges to remain distinguishable.
+- Overall lecture revalidation should be `Partial` if any of note, card, or quiz criteria remain warning-only but not blocking.
