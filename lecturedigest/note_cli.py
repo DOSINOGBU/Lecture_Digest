@@ -19,6 +19,10 @@ from lecturedigest.openai_notes import (
     format_openai_note_dry_run,
     generate_note_candidates_with_openai,
 )
+from lecturedigest.note_quality import (
+    format_note_quality_result,
+    inspect_note_quality,
+)
 from lecturedigest.note_preview import export_note_previews
 from lecturedigest.storage import JsonLectureRepository
 
@@ -132,6 +136,24 @@ def reject_note_command(
     return 0
 
 
+def inspect_note_quality_command(
+    args: argparse.Namespace,
+    repository: JsonLectureRepository,
+) -> int:
+    record = _load_record(args.lecture_id, repository, stage="note_quality")
+    if record is None:
+        return 0
+
+    print(
+        "[LectureNotes] inspect-note-quality start "
+        f"{{ lectureId={args.lecture_id}; "
+        f"candidateId={args.candidate_id or 'all'} }}"
+    )
+    result = inspect_note_quality(record, candidate_id=args.candidate_id)
+    print(format_note_quality_result(result))
+    return 0
+
+
 def add_note_parsers(subparsers: argparse._SubParsersAction) -> None:
     generate_parser = subparsers.add_parser("generate-notes")
     generate_parser.add_argument("--lecture-id", required=True)
@@ -171,6 +193,10 @@ def add_note_parsers(subparsers: argparse._SubParsersAction) -> None:
     reject_parser.add_argument("--lecture-id", required=True)
     reject_parser.add_argument("--candidate-id", required=True)
     reject_parser.add_argument("--reason")
+
+    inspect_parser = subparsers.add_parser("inspect-note-quality")
+    inspect_parser.add_argument("--lecture-id", required=True)
+    inspect_parser.add_argument("--candidate-id")
 
 
 def format_note_generation_result(record, *, preview_paths=None) -> str:

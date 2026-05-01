@@ -28,6 +28,7 @@ from lecturedigest.note_cli import (
     add_note_parsers,
     approve_note_command,
     generate_notes_command,
+    inspect_note_quality_command,
     reject_note_command,
 )
 from lecturedigest.ocr_cli import add_ocr_parser, ocr_command
@@ -89,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
             return approve_note_command(args, repository)
         if args.command == "reject-note":
             return reject_note_command(args, repository)
+        if args.command == "inspect-note-quality":
+            return inspect_note_quality_command(args, repository)
         if args.command == "generate-cards":
             return generate_cards_command(args, repository)
         if args.command == "export-anki":

@@ -140,6 +140,44 @@ class NoteCliTest(unittest.TestCase):
         self.assertIn("command failed", stderr.getvalue())
         self.assertIn("note_candidates_required", stderr.getvalue())
 
+    def test_inspect_note_quality_outputs_empty_candidate_state(self):
+        lecture_id = _register_lecture(self.store, self.root)
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "inspect-note-quality",
+                    "--lecture-id",
+                    lecture_id,
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("inspect-note-quality start", stdout.getvalue())
+        self.assertIn("inspect-note-quality empty", stdout.getvalue())
+
+    def test_inspect_note_quality_outputs_error_for_missing_lecture(self):
+        _register_lecture(self.store, self.root)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            exit_code = main(
+                [
+                    "--store",
+                    str(self.store),
+                    "inspect-note-quality",
+                    "--lecture-id",
+                    "missing",
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("lecture_not_found", stderr.getvalue())
+
 
 def _register_lecture(store: Path, root: Path) -> str:
     video = root / "lecture.mp4"
