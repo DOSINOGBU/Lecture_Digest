@@ -37,3 +37,10 @@
 
 - MVP UI에서 어떤 검토 결정까지 감사 이력으로 남길지 정해야 한다.
 - 반려된 후보를 비교용으로 유지할지, 기본적으로 숨길지 결정해야 한다.
+
+## 20d Quiz Source Of Truth
+
+- Quiz review UI must use `docs/golden-samples/quiz-browser-understanding-combined.json` as the quiz source of truth.
+- The UI should show 43 quiz items total: 8 `legacy_e2e` items and 35 `golden_set_3` items.
+- Each quiz row/card should display a source badge: `legacy_e2e` or `golden_set_3`.
+- The UI must not assume `.lecturedigest/e2e-real-lecture-validation.json` alone contains the complete quiz review pool.

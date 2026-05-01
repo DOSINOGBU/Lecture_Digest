@@ -53,3 +53,17 @@ OpenAI quiz parsing now:
 
 - Human review still needs to confirm question clarity and conceptual coverage.
 - If only a few questions are weak, curate the golden sample instead of regenerating the whole set.
+
+## Combined Source Of Truth Update
+
+Set 3 remains the hardened golden source, but it is not the only quiz review source.
+The official review pool is now the combined manifest:
+
+- `docs/golden-samples/quiz-browser-understanding-combined.json`
+
+That manifest keeps both source streams:
+
+- `legacy_e2e`: 8 existing quiz items from `.lecturedigest/e2e-real-lecture-validation.json`
+- `golden_set_3`: 35 hardened quiz items from `.lecturedigest/quiz-candidate-sets/20a-gpt41-standard/golden-set-3-store.json`
+
+UI review and 22 revalidation should use the combined 43-question pool and preserve the source badge for each item.

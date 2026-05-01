@@ -1,0 +1,50 @@
+{
+  "kind": "quiz_combined_source_of_truth",
+  "lecture_id": "lec_3f51e7be057c",
+  "lecture_slug": "browser-understanding",
+  "source_policy": "combined_manifest",
+  "dedupe_policy": "keep_all_tagged",
+  "expected_total": 43,
+  "sources": {
+    "legacy_e2e": {
+      "artifact_path": ".lecturedigest/e2e-real-lecture-validation.json",
+      "record_selector": {
+        "lecture_id": "lec_3f51e7be057c"
+      },
+      "quiz_items_path": "quiz_items",
+      "expected_count": 8,
+      "role": "legacy_e2e_flow",
+      "source_badge": "legacy_e2e",
+      "notes": "Existing local quiz output from the E2E lecture store."
+    },
+    "golden_set_3": {
+      "artifact_path": ".lecturedigest/quiz-candidate-sets/20a-gpt41-standard/golden-set-3-store.json",
+      "record_selector": {
+        "lecture_id": "lec_3f51e7be057c"
+      },
+      "quiz_items_path": "quiz_items",
+      "expected_count": 35,
+      "role": "hardened_golden_sample",
+      "source_badge": "golden_set_3",
+      "summary_path": ".lecturedigest/quiz-candidate-sets/20a-gpt41-standard/golden-set-3-summary.json",
+      "preview_path": ".lecturedigest/quiz-candidate-sets/20a-gpt41-standard/golden-set-3-preview.md",
+      "notes": "User-selected and hardened quiz candidate set 3."
+    }
+  },
+  "review_policy": {
+    "ui_source_of_truth": "this_manifest",
+    "show_source_badges": true,
+    "source_badges": [
+      "legacy_e2e",
+      "golden_set_3"
+    ],
+    "dedupe_before_review": false,
+    "expected_review_pool_size": 43,
+    "accept_individual_reject_or_approve": true
+  },
+  "revalidation_policy": {
+    "use_combined_pool": true,
+    "report_total_metrics": true,
+    "report_source_breakdown": true
+  }
+}

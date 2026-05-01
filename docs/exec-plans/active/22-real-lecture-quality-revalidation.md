@@ -36,3 +36,10 @@
 
 - 골든 노트/카드/퀴즈 샘플의 최종 승인 담당자가 필요하다.
 - 25분 샘플을 현재 실제 강의로 할지, 다른 대표 강의로 바꿀지 결정해야 한다.
+
+## 20d Quiz Source Of Truth
+
+- Quiz revalidation must use `docs/golden-samples/quiz-browser-understanding-combined.json` as the quiz source of truth.
+- The expected quiz review pool is 43 total items: 8 `legacy_e2e` items plus 35 `golden_set_3` items.
+- Revalidation should report combined metrics and source-level breakdowns.
+- The existing E2E store quiz list is only one source in the combined pool, not the complete quiz baseline.
