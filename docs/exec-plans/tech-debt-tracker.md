@@ -14,3 +14,11 @@ AI 작업 중 발견한 반복 문제와 나중에 처리할 기술 부채를 �
 ## 2026-04-30 Update
 
 - TD-006 was mitigated by `18a-note-prd-quality-repair`: the real lecture sample now has 3 `review_required` OpenAI note candidates after repair. Golden note approval is still a manual decision.
+
+## 2026-05-01 Update
+
+| ID | Issue | Impact | Proposed resolution | Status |
+|---|---|---|---|---|
+| TD-007 | 22 revalidation has no completed tiny/short sample | Long lecture baseline was revalidated, but newly registered lectures are transcript-only and have no AI note/card/quiz outputs yet. | Complete AI generation for one short lecture or approve a synthetic fixture before the next full quality revalidation. | open |
+| TD-008 | Legacy quiz explanations still expose source artifacts | The combined quiz pool passes source/count checks, but 8 `legacy_e2e` explanations contain visible source/timestamp text. | Hide legacy explanations in learner-facing UI or regenerate/repair the 8 legacy items before clean golden promotion. | open |
+| TD-009 | Approved note remains warning-level only | Approved note has no blocking failures, but still has `missing_flow_diagram`, `missing_comparison_table`, `missing_code_block`, and `coverage_too_sparse`. | Either fix note generation/repair output or explicitly waive those warnings with reviewer rationale. | open |

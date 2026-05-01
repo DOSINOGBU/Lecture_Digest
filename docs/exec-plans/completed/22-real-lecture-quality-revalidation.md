@@ -70,3 +70,19 @@
 - Cards: `Passed` requires 42 ready cards, 0 duplicate IDs, 0 source mapping gaps, and 0 visible source artifacts.
 - Quiz: `Passed` requires the combined 43-item manifest counts to match both sources and source badges to remain distinguishable.
 - Overall lecture revalidation should be `Partial` if any of note, card, or quiz criteria remain warning-only but not blocking.
+
+## Result
+
+- Completed 2026-05-01 with status `Partial`.
+- Real lecture baseline used `lec_3f51e7be057c` from `.lecturedigest/e2e-real-lecture-validation.json`.
+- Note revalidation ran `inspect-note-quality` and found the approved candidate `note-candidate-openai-25fc9d1376-03` has no blocking failures but remains `review_required`.
+- Approved note warnings remain:
+  - `missing_flow_diagram`
+  - `missing_comparison_table`
+  - `missing_code_block`
+  - `coverage_too_sparse`
+- Card revalidation used `docs/golden-samples/card-browser-understanding-set-3.json` and passed count/source checks: 42 ready cards, 0 duplicate IDs, 0 source mapping gaps, 0 visible source artifacts, TSV present.
+- Quiz revalidation used `docs/golden-samples/quiz-browser-understanding-combined.json` and passed combined count/source checks: 43 total items, 8 `legacy_e2e`, 35 `golden_set_3`, source badges preserved.
+- Quiz quality warning: the 8 `legacy_e2e` items keep visible source artifacts in `explanation`; question text itself has no visible source artifacts.
+- Tiny/short lecture revalidation was not completed because the currently registered new lectures have transcript-only state and no AI note/card/quiz outputs yet.
+- Streamlit endpoint responded at `http://localhost:8501`; browser-level visual review remains a manual follow-up.
