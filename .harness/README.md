@@ -50,6 +50,12 @@
 검증 기준은 `.harness/config.json`에서 조정합니다.
 `-Maintenance`를 함께 사용하면 오래된 계획, 등록 누락, generated 문서 placeholder, 과도한 TODO를 warning으로 보고합니다.
 
+## Version Control Recommendation
+
+작업 완료 보고 전에는 `scripts/recommend-version-control.ps1`로 Commit/Push/PR 타이밍을 확인합니다.
+이 스크립트는 Git 상태와 diff check를 읽기만 하며 커밋이나 푸시를 실행하지 않습니다.
+검증 결과에 맞춰 `-VerificationStatus Passed`, `Partial`, `Failed`, `NotRun` 중 하나를 전달하고, 자동화 연동이 필요하면 `-Json`을 사용합니다.
+
 ## Principle
 
 프롬프트는 일회성 지시입니다.

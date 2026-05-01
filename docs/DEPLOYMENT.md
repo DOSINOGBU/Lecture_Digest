@@ -1,24 +1,55 @@
 # Deployment
 
-배포 절차와 롤백 방법을 기록합니다.
+## MVP Configuration Decision
+
+- MVP는 로컬 CLI/단일 프로세스 실행을 기본으로 유지하고, 유료 외부 호출은 사용자의 BYOK 설정으로만 수행합니다.
+- 클라우드 preview 또는 공유 실행 환경을 열기 전에는 인증, 저장소 암호화, 사용자별 비용 한도, rate limit, 삭제 정책을 별도 ADR로 확정해야 합니다.
+- Streamlit UI는 승인/검토 UX가 필요한 시점에 붙이며, 비용이 드는 실행 버튼은 예상 입력 범위와 외부 전송 범위를 보여준 뒤 동작해야 합니다.
+
+LectureDigest는 MVP에서 개인 로컬/개인 계정 기반 사용을 우선합니다. 초기 클라우드 범위는 LLM 호출로 제한하고, 강의 파일, STT/OCR 원본, 벡터 저장소, 캐시는 로컬 중심으로 둡니다. 정식 클라우드 배포는 후속 범위이며, 인증, 객체 스토리지, 사용자별 비용 한도, 멀티테넌시 설계가 확정된 뒤 별도 ADR과 배포 절차를 작성합니다.
 
 ## Environments
 
 | 환경 | 목적 | 배포 방식 | 승인 |
 |---|---|---|---|
-| TODO | TODO | TODO | TODO |
+| Local MVP | 개인 강의 처리와 개발 검증 | Streamlit + 단일 프로세스 또는 CLI | 개발자 확인 |
+| Local Processing | STT/OCR/임베딩/캐시 처리 | 로컬 단일 프로세스 우선 | 개발자 확인 |
+| Cloud LLM | 요약/RAG/노트 생성 LLM 호출 | 외부 LLM API 호출만 허용 | 사용자 API 키/비용 확인 |
+| Cloud Preview | 후속 클라우드 검증 | 미정 | 사용자 승인 필요 |
+| Production Cloud | 후속 정식 서비스 | 미정 | 보안/비용/운영 검토 필요 |
 
 ## Commands
 
 | 목적 | 명령 | 비고 |
 |---|---|---|
-| 빌드 | TODO | TODO |
-| 배포 | TODO | TODO |
-| 롤백 | TODO | TODO |
+| 설치 | `python -m pip install -r requirements.txt` | Streamlit UI 실행 전 필요 |
+| 개발 서버 | `python -m streamlit run lecturedigest/streamlit_app.py` | 로컬 리뷰 UI |
+| 워커 실행 | TODO | 큐 방식 확정 후 작성 |
+| 빌드 | TODO | 배포 전 확인 |
+| 배포 | TODO | 클라우드 범위 확정 전 미정 |
+| 롤백 | TODO | 배포 방식 확정 후 작성 |
+
+## Configuration
+
+- API 키는 환경 변수 또는 안전한 비밀 저장소에서만 읽습니다.
+- 외부 API 전송 범위, 모델 선택, 비용 제한, 로컬/클라우드 처리 범위는 설정으로 확인 가능해야 합니다.
+- 초기 설정의 클라우드 전송 범위는 LLM 호출용 텍스트로 제한합니다.
+- 모델명, prompt 버전, 임베딩 모델, 벡터 DB 연결, 캐시 위치는 배포 환경별로 명시합니다.
+- 저작권이 있는 강의 원본을 외부 저장소에 업로드하는 설정은 기본값으로 꺼둡니다.
 
 ## Release Checks
 
 - [ ] 배포 대상 브랜치와 커밋을 확인했습니다.
 - [ ] 필요한 테스트와 빌드가 통과했습니다.
 - [ ] 환경변수와 시크릿 변경이 검토되었습니다.
+- [ ] 외부 API 비용과 데이터 전송 범위를 확인했습니다.
+- [ ] 캐시/모델/prompt 버전 변경에 따른 재생성 영향을 확인했습니다.
 - [ ] 롤백 방법을 확인했습니다.
+
+## Initial Decisions And Open Questions
+
+| 질문 | 현재 상태 |
+|---|---|
+| MVP 배포 단위가 CLI, Streamlit, Next.js 앱 중 무엇인가? | Streamlit 추천, CLI 보조 가능 |
+| 클라우드 Preview를 언제 시작할 것인가? | 미정 |
+| GPU가 필요한 STT/OCR 처리를 로컬 워커로 고정할지, 클라우드 워커를 둘지? | 초기에는 로컬 처리 |

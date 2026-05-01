@@ -12,6 +12,7 @@
 - 중요한 입력은 일찍 검증해줘.
 - 필요한 로그와 에러 맥락을 남겨줘.
 - 구현 후 관련 검증을 실행하고 결과를 요약해줘.
+- 검증 후 `scripts/recommend-version-control.ps1 -VerificationStatus <Passed|Partial|Failed|NotRun>`를 실행하고 Commit/Push/PR 판단을 보고해줘.
 
 계획:
 TODO
